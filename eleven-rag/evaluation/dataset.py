@@ -64,7 +64,7 @@ def load_eval_samples(dataset_path: str) -> list[EvalSample]:
 
     if path.suffix.lower() == ".jsonl":
         rows = []
-        with path.open("r", encoding="utf-8") as handle:
+        with path.open("r", encoding="utf-8-sig") as handle:
             for line_no, line in enumerate(handle, start=1):
                 payload = line.strip()
                 if not payload:
@@ -74,7 +74,7 @@ def load_eval_samples(dataset_path: str) -> list[EvalSample]:
                 except json.JSONDecodeError as exc:
                     raise ValueError(f"invalid jsonl at line {line_no}: {exc}") from exc
     elif path.suffix.lower() == ".json":
-        with path.open("r", encoding="utf-8") as handle:
+        with path.open("r", encoding="utf-8-sig") as handle:
             parsed = json.load(handle)
         if isinstance(parsed, dict):
             rows = parsed.get("samples") or parsed.get("data") or []

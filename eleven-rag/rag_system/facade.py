@@ -88,8 +88,15 @@ class RAGSystem:
         session_id: str,
         query: str,
         top_k: int | None = None,
+        doc_id_prefixes: list[str] | None = None,
     ):
-        return self._get_qa().ask(user_id, session_id, query, top_k)
+        return self._get_qa().ask(
+            user_id=user_id,
+            session_id=session_id,
+            query=query,
+            top_k=top_k,
+            doc_id_prefixes=doc_id_prefixes,
+        )
 
     def upsert_preference(self, user_id: str, key: str, value: str) -> None:
         self._get_memory_service().upsert_preference(user_id, key, value)

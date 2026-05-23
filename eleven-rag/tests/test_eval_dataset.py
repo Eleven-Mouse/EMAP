@@ -24,6 +24,20 @@ def test_load_eval_samples_from_jsonl(tmp_path):
     assert samples[1].reference_answer == "ans"
 
 
+def test_load_eval_samples_from_jsonl_with_bom(tmp_path):
+    dataset = tmp_path / "dataset_bom.jsonl"
+    dataset.write_text(
+        "\ufeff{\"id\":\"a1\",\"query\":\"q1\"}\n",
+        encoding="utf-8",
+    )
+
+    samples = load_eval_samples(str(dataset))
+
+    assert len(samples) == 1
+    assert samples[0].sample_id == "a1"
+    assert samples[0].query == "q1"
+
+
 def test_load_eval_samples_from_json(tmp_path):
     dataset = tmp_path / "dataset.json"
     dataset.write_text(

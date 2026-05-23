@@ -1,4 +1,25 @@
 import os
+from pathlib import Path
+
+
+def _load_dotenv_file() -> None:
+    root = Path(__file__).resolve().parents[2]
+    env_file = root / ".env"
+    if not env_file.exists():
+        return
+
+    for raw_line in env_file.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip("'").strip('"')
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+_load_dotenv_file()
 
 
 def _to_int(value: str, default: int) -> int:
@@ -40,6 +61,16 @@ class Settings:
         self.embedding_device = os.getenv("EMBEDDING_DEVICE", "cpu")
         self.embedding_cache_dir = os.getenv(
             "EMBEDDING_CACHE_DIR", f"{self.rag_store_dir}/models"
+        )
+        self.llm_enabled = _to_bool(os.getenv("LLM_ENABLED", "false"), False)
+        self.llm_api_base = os.getenv("LLM_API_BASE", "").rstrip("/")
+        self.llm_api_key = os.getenv("LLM_API_KEY", "")
+        self.llm_model = os.getenv("LLM_MODEL", "mimo-pro")
+        self.llm_temperature = _to_float(os.getenv("LLM_TEMPERATURE", "0.2"), 0.2)
+        self.llm_max_tokens = _to_int(os.getenv("LLM_MAX_TOKENS", "1024"), 1024)
+        self.llm_timeout_seconds = _to_int(
+            os.getenv("LLM_TIMEOUT_SECONDS", "60"),
+            60,
         )
         self.mysql_dsn = os.getenv(
             "MYSQL_DSN",
