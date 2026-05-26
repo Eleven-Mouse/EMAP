@@ -1,0 +1,17 @@
+Resolved 250 packages in 1ms
+Checked 137 packages in 13ms
+Traceback (most recent call last):
+  File "C:\Users\33313\Desktop\Eleven-RAG\scripts\manage_memory_schema.py", line 155, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "C:\Users\33313\Desktop\Eleven-RAG\scripts\manage_memory_schema.py", line 151, in main
+    return run(action=args.action, dry_run=args.dry_run)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\33313\Desktop\Eleven-RAG\scripts\manage_memory_schema.py", line 111, in run
+    with engine.raw_connection() as connection:
+         ^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '_ConnectionFairy' object does not support the context manager protocol
+INFO:     Started server process [19112]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
