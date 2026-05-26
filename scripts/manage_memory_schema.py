@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import hashlib
@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from sqlalchemy import create_engine
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-if str(ROOT / "eleven-agent-platform") not in sys.path:
-    sys.path.insert(0, str(ROOT / "eleven-agent-platform"))
+if str(ROOT / "eleven-rag") not in sys.path:
+    sys.path.insert(0, str(ROOT / "eleven-rag"))
 
 from core.config import settings  # noqa: E402
 
@@ -153,4 +153,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

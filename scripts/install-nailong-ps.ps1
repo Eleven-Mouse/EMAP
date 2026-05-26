@@ -1,7 +1,7 @@
-﻿$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$cliPath = Join-Path $repoRoot "eleven-agent-platform\nailong_cli.py"
+$cliPath = Join-Path $repoRoot "eleven-rag\nailong_cli.py"
 if (-not (Test-Path $cliPath)) {
   throw "nailong_cli.py not found: $cliPath"
 }
@@ -36,5 +36,3 @@ Write-Output "Installed command alias '$triggerName' into profile: $profilePath"
 
 Write-Output "Done. Reopen terminal or run: . `$PROFILE"
 Write-Output "Usage: 奶龙 这份文档讲了什么？"
-
-
