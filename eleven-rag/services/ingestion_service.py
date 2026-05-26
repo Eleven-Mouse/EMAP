@@ -1,0 +1,20 @@
+from document_processing.pipeline import Pipeline
+
+
+class IngestionService:
+    def __init__(self) -> None:
+        self._pipeline = Pipeline()
+
+    def ingest(
+        self,
+        document_id: str,
+        content: str | None,
+        file_path: str | None,
+        source: str,
+    ) -> int:
+        return self._pipeline.ingest(
+            document_id=document_id,
+            content=content,
+            file_path=file_path,
+            source=source,
+        )

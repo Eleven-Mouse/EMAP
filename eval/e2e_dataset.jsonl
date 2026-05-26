@@ -1,2 +1,0 @@
-﻿{"id":"e2e-1","query":"系统检索策略是什么？","reference_answer":"系统检索策略采用关键词+向量+重排。","expected_chunk_ids":["doc-e2e-001-chunk-0"]}
-{"id":"e2e-2","query":"长期记忆和短期记忆分别用什么？","reference_contexts":["长期记忆存储在 MySQL，短期会话记忆存储在 Redis。"],"expected_chunk_ids":["doc-e2e-001-chunk-0"]}
