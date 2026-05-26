@@ -1,8 +1,8 @@
-﻿# 后端篇：`eleven-rag-backend` 项目导读
+﻿# 后端篇：`eleven-memory-agent-platform` 项目导读
 
 ## 1. 先用一句话理解后端
 
-`eleven-rag-backend` 是一个 Python + FastAPI + LangChain 的 RAG 后端，围绕“偏好记忆、知识记忆、会话记忆”三类记忆，提供文档导入、混合检索、带引用问答，以及“新知识对照旧知识”的学习型生成能力。
+`eleven-memory-agent-platform` 是一个 Python + FastAPI + LangChain 的记忆增强 Agent 后端（内置 RAG），围绕“偏好记忆、知识记忆、会话记忆”三类记忆，提供文档导入、混合检索、带引用问答，以及“新知识对照旧知识”的学习型生成能力。
 
 最关键的理解是：
 
@@ -274,3 +274,4 @@ POST /v1/learning/contrast
 ## 10. 给新人的一句话建议
 
 先把“文档导入 -> 混合检索问答 -> 引用返回”主链跑通，再做偏好记忆和新知识对照学习；主链打稳后，系统扩展会简单很多。
+
