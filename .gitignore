@@ -1,0 +1,14 @@
+.venv/
+.rag_store/
+.pytest_cache/
+
+__pycache__/
+*.py[cod]
+
+*.db
+*.sqlite
+*.sqlite3
+
+.idea/
+.DS_Store
+Thumbs.db
