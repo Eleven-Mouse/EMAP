@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$PythonVersion = "3.12",
   [int]$Port = 8000,
   [switch]$SkipSync,
@@ -50,7 +50,7 @@ import sys
 from sqlalchemy import create_engine, text
 import redis
 
-sys.path.insert(0, "eleven-rag")
+sys.path.insert(0, "eleven-agent-platform")
 from core.config import settings
 
 engine = create_engine(settings.mysql_dsn, pool_pre_ping=True)
@@ -78,7 +78,7 @@ print("Redis ok")
   $uvicornArgs = @(
     "run", "--python", $PythonVersion,
     "uvicorn", "main:app",
-    "--app-dir", "eleven-rag",
+    "--app-dir", "eleven-agent-platform",
     "--port", "$Port"
   )
   if (-not $NoReload) {
@@ -90,3 +90,4 @@ print("Redis ok")
 } finally {
   Pop-Location
 }
+

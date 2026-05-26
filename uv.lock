@@ -868,7 +868,7 @@ wheels = [
 ]
 
 [[package]]
-name = "eleven-rag"
+name = "eleven-memory-agent-platform"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

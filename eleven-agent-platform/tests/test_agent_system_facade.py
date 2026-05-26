@@ -1,9 +1,9 @@
-from pathlib import Path
+﻿from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from rag_system.facade import RAGSystem
+from agent_system.facade import AgentSystem
 
 
 class FakePipeline:
@@ -66,8 +66,8 @@ class FakeQA:
         return ("answer", [{"user_id": user_id, "session_id": session_id, "query": query, "top_k": top_k}])
 
 
-def test_rag_system_facade_delegates_to_layer_objects():
-    rag = RAGSystem()
+def test_agent_system_facade_delegates_to_layer_objects():
+    rag = AgentSystem()
     rag._pipeline = FakePipeline()
     rag._document_processor = FakeDocumentProcessor()
     rag._embedding_service = FakeEmbeddingService()
@@ -90,3 +90,4 @@ def test_rag_system_facade_delegates_to_layer_objects():
     assert rag.search("q", 5) == [("q", 5)]
     assert rag.retrieve("q", 5) == {"query": "q", "top_k": 5}
     assert rag.ask("u1", "s1", "q", 5)[0] == "answer"
+

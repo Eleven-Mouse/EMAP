@@ -8,11 +8,18 @@ from evaluation.runner import EvaluationRunner
 from schemas.common import SourceItem
 
 
-class FakeRAGSystem:
+class FakeAgentSystem:
     def __init__(self):
         self.calls = []
 
-    def ask(self, user_id: str, session_id: str, query: str, top_k: int):
+    def ask(
+        self,
+        user_id: str,
+        session_id: str,
+        query: str,
+        top_k: int,
+        doc_id_prefixes=None,
+    ):
         self.calls.append((user_id, session_id, query, top_k))
         if "检索策略" in query:
             sources = [
@@ -37,7 +44,7 @@ class FakeRAGSystem:
 
 
 def test_evaluation_runner_produces_summary_without_optional_integrations():
-    runner = EvaluationRunner(rag_system=FakeRAGSystem())
+    runner = EvaluationRunner(agent_system=FakeAgentSystem())
     samples = [
         EvalSample(
             sample_id="s1",
@@ -68,3 +75,4 @@ def test_evaluation_runner_produces_summary_without_optional_integrations():
     assert summary["ragas_metrics"] == {}
     assert result["phoenix"]["enabled"] is False
     assert len(result["rows"]) == 2
+

@@ -1,11 +1,11 @@
-from document_processing.document_processor import DocumentProcessor
+﻿from document_processing.document_processor import DocumentProcessor
 from document_processing.pipeline import Pipeline
 from embedding.embedding_service import EmbeddingService
 from qa.answering import IntelligentQA
 from vector_storage.vector_store import QdrantVectorStore
 
 
-class RAGSystem:
+class AgentSystem:
     def __init__(self) -> None:
         self._document_processor: DocumentProcessor | None = None
         self._pipeline: Pipeline | None = None
@@ -114,3 +114,4 @@ class RAGSystem:
 
     def list_preferences(self, user_id: str):
         return self._get_memory_service().list_preferences(user_id)
+

@@ -1,8 +1,8 @@
-from pathlib import Path
+﻿from pathlib import Path
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "eleven-rag"))
+sys.path.insert(0, str(ROOT / "eleven-agent-platform"))
 
 from services.container import vector_repository  # noqa: E402
 
@@ -15,3 +15,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

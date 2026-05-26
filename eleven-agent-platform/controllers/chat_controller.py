@@ -1,10 +1,10 @@
-from fastapi import APIRouter
+﻿from fastapi import APIRouter
 
 from schemas.chat import ChatRequest, ChatResponse
-from rag_system import RAGSystem
+from agent_system import AgentSystem
 
 router = APIRouter(tags=["chat"])
-system = RAGSystem()
+system = AgentSystem()
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -16,3 +16,4 @@ def chat(payload: ChatRequest) -> ChatResponse:
         top_k=payload.top_k,
     )
     return ChatResponse(answer=answer, sources=sources)
+

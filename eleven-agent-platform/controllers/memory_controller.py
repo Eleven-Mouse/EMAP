@@ -1,10 +1,10 @@
-from fastapi import APIRouter
+﻿from fastapi import APIRouter
 
 from schemas.memory import PreferenceItem, PreferenceUpsertRequest
-from rag_system import RAGSystem
+from agent_system import AgentSystem
 
 router = APIRouter(tags=["memory"])
-system = RAGSystem()
+system = AgentSystem()
 
 
 @router.post("/memory/preferences")
@@ -20,3 +20,4 @@ def upsert_preference(payload: PreferenceUpsertRequest) -> dict[str, str]:
 @router.get("/memory/preferences/{user_id}", response_model=list[PreferenceItem])
 def list_preferences(user_id: str) -> list[PreferenceItem]:
     return system.list_preferences(user_id=user_id)
+

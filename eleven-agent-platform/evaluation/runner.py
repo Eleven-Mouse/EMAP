@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from evaluation.dataset import EvalSample
-from rag_system import RAGSystem
+from agent_system import AgentSystem
 from services.text_utils import tokenize_text
 
 
@@ -153,8 +153,8 @@ def _export_to_phoenix(rows: list[dict], phoenix_url: str | None = None) -> dict
 
 
 class EvaluationRunner:
-    def __init__(self, rag_system: RAGSystem | None = None) -> None:
-        self._rag = rag_system or RAGSystem()
+    def __init__(self, agent_system: AgentSystem | None = None) -> None:
+        self._rag = agent_system or AgentSystem()
 
     def run(
         self,
@@ -244,3 +244,4 @@ class EvaluationRunner:
             "rows": rows,
             "phoenix": phoenix_info,
         }
+

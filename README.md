@@ -1,4 +1,4 @@
-# Eleven Memory Agent Platform (EMAP)
+﻿# Eleven Memory Agent Platform (EMAP)
 
 最小可运行的记忆增强 Agent 后端骨架（内置 RAG 能力），满足：
 
@@ -18,7 +18,7 @@ Eleven Memory Agent Platform/
 ├─ .env.example
 ├─ pyproject.toml
 ├─ README.md
-└─ eleven-rag/
+└─ eleven-agent-platform/
    ├─ main.py
    ├─ core/
    │  └─ config.py
@@ -78,7 +78,7 @@ uv sync --python 3.12
 2. 启动服务：
 
 ```bash
-uv run --python 3.12 uvicorn main:app --app-dir eleven-rag --reload --port 8000
+uv run --python 3.12 uvicorn main:app --app-dir eleven-agent-platform --reload --port 8000
 ```
 
 首次启动会预热 `BAAI/bge-m3` 并缓存到 `.rag_store/models`。
@@ -119,19 +119,19 @@ LLM_TIMEOUT_SECONDS=60
 4. 奶龙命令行提问（默认直接提问）：
 
 ```bash
-uv run --python 3.12 python eleven-rag/nailong_cli.py "什么是RAG？"
+uv run --python 3.12 python eleven-agent-platform/nailong_cli.py "什么是RAG？"
 ```
 
 如需强制触发词模式：
 
 ```bash
-uv run --python 3.12 python eleven-rag/nailong_cli.py --require-trigger "奶龙 什么是RAG？"
+uv run --python 3.12 python eleven-agent-platform/nailong_cli.py --require-trigger "奶龙 什么是RAG？"
 ```
 
 5. 奶龙本地文件导入（.md/.txt/.pdf）：
 
 ```bash
-uv run --python 3.12 python eleven-rag/nailong_ingest.py docs/intro.md
+uv run --python 3.12 python eleven-agent-platform/nailong_ingest.py docs/intro.md
 ```
 
 可选参数：
@@ -242,7 +242,7 @@ uv run --python 3.12 python eleven-rag/nailong_ingest.py docs/intro.md
 
 ## 6. 奶龙导入能力
 
-- `eleven-rag/nailong_ingest.py` 通过 `LangChain + UnstructuredLoader` 解析 `.md/.txt/.pdf`。
+- `eleven-agent-platform/nailong_ingest.py` 通过 `LangChain + UnstructuredLoader` 解析 `.md/.txt/.pdf`。
 - 依赖 `langchain-unstructured`、`unstructured` 和 `markdown`。
 - 当前使用本地解析模式，扫描件 OCR 暂未接入。
 
@@ -355,3 +355,5 @@ uv run --python 3.12 python scripts/evaluate_rag.py \
 
 - 本仓库主编排仍保持 `LangChain`。
 - `LlamaIndex` 当前作为可选评估生态依赖引入，不改动现有业务链路。
+
+

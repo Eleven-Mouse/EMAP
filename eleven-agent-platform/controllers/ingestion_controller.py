@@ -1,10 +1,10 @@
-from fastapi import APIRouter
+﻿from fastapi import APIRouter
 
 from schemas.ingestion import IngestRequest, IngestResponse
-from rag_system import RAGSystem
+from agent_system import AgentSystem
 
 router = APIRouter(tags=["ingestion"])
-system = RAGSystem()
+system = AgentSystem()
 
 
 @router.post("/ingest", response_model=IngestResponse)
@@ -19,3 +19,4 @@ def ingest(payload: IngestRequest) -> IngestResponse:
         chunk_overlap=payload.chunk_overlap,
     )
     return IngestResponse(document_id=payload.document_id, chunk_count=chunk_count)
+

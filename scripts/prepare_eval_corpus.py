@@ -1,14 +1,14 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-APP_DIR = ROOT / "eleven-rag"
+APP_DIR = ROOT / "eleven-agent-platform"
 if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
 
-from rag_system import RAGSystem  # noqa: E402
+from agent_system import AgentSystem  # noqa: E402
 
 
 E2E_DOC_ID = "doc-e2e-001"
@@ -22,7 +22,7 @@ E2E_CONTENT = (
 
 
 def main() -> int:
-    rag = RAGSystem()
+    rag = AgentSystem()
     chunk_count = rag.ingest(
         document_id=E2E_DOC_ID,
         content=E2E_CONTENT,
@@ -36,4 +36,5 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
 
