@@ -49,7 +49,7 @@ def _to_bool(value: str, default: bool) -> bool:
 
 class Settings:
     def __init__(self) -> None:
-        self.app_name = os.getenv("APP_NAME", "Eleven-RAG")
+        self.app_name = os.getenv("APP_NAME", "Eleven Memory Agent Platform")
         self.app_env = os.getenv("APP_ENV", "dev")
         self.top_k = _to_int(os.getenv("TOP_K", "5"), 5)
         self.chunk_size = _to_int(os.getenv("CHUNK_SIZE", "500"), 500)

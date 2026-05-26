@@ -70,6 +70,7 @@ def _ingest_file(base_url: str, file_path_text: str) -> int:
         "document_id": document_id,
         "file_path": str(file_path),
         "source": "local-file",
+        "chunk_strategy": "recursive",
     }
     try:
         result = _post_json(f"{base_url}/v1/ingest", payload)

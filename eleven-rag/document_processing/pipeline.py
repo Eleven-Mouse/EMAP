@@ -4,19 +4,44 @@ from core.config import settings
 from document_processing.document_processor import DocumentProcessor
 
 
-def _split_documents(file_path: str, chunk_size: int, overlap: int) -> list[tuple[str, dict]]:
-    parser = DocumentProcessor()
-    documents = parser.parse_file(file_path)
+def _build_splitter(chunk_size: int, overlap: int, chunk_strategy: str):
+    strategy = (chunk_strategy or "recursive").strip().lower()
+    separators = ["\n\n", "\n", "。", "！", "？", " ", ""]
+    if strategy == "markdown":
+        separators = ["\n# ", "\n## ", "\n### ", "\n\n", "\n", "。", " ", ""]
+    elif strategy == "sentence":
+        separators = ["。", "！", "？", ". ", "! ", "? ", "\n", " ", ""]
+    elif strategy != "recursive":
+        raise ValueError(
+            f"Unsupported chunk strategy: {chunk_strategy}. "
+            "Use one of: recursive, markdown, sentence."
+        )
 
-    splitter = RecursiveCharacterTextSplitter(
+    return RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
         chunk_overlap=overlap,
-        separators=["\n\n", "\n", "。", "！", "？", " ", ""],
+        separators=separators,
+    )
+
+
+def _split_documents(
+    file_path: str,
+    chunk_size: int,
+    overlap: int,
+    chunk_strategy: str,
+) -> list[tuple[str, dict]]:
+    parser = DocumentProcessor()
+    documents = parser.parse_file(file_path)
+    splitter = _build_splitter(
+        chunk_size=chunk_size,
+        overlap=overlap,
+        chunk_strategy=chunk_strategy,
     )
 
     chunks: list[tuple[str, dict]] = []
     for document in documents:
         base_metadata = dict(document.metadata or {})
+        base_metadata["chunk_strategy"] = chunk_strategy
         for chunk in splitter.split_text(document.page_content):
             chunk = chunk.strip()
             if chunk:
@@ -30,17 +55,39 @@ class Pipeline:
 
         return metadata_repository, vector_repository
 
-    def ingest(self, document_id: str, content: str | None, file_path: str | None, source: str) -> int:
+    def ingest(
+        self,
+        document_id: str,
+        content: str | None,
+        file_path: str | None,
+        source: str,
+        chunk_strategy: str = "recursive",
+        chunk_size: int | None = None,
+        chunk_overlap: int | None = None,
+    ) -> int:
         metadata_repository, vector_repository = self._get_repositories()
+        size = chunk_size or settings.chunk_size
+        overlap = chunk_overlap if chunk_overlap is not None else settings.chunk_overlap
+        if overlap >= size:
+            raise ValueError("chunk_overlap must be smaller than chunk_size")
         if file_path:
-            pieces = _split_documents(file_path, settings.chunk_size, settings.chunk_overlap)
-        elif content:
-            splitter = RecursiveCharacterTextSplitter(
-                chunk_size=settings.chunk_size,
-                chunk_overlap=settings.chunk_overlap,
-                separators=["\n\n", "\n", "。", "！", "？", " ", ""],
+            pieces = _split_documents(
+                file_path=file_path,
+                chunk_size=size,
+                overlap=overlap,
+                chunk_strategy=chunk_strategy,
             )
-            pieces = [(chunk.strip(), {}) for chunk in splitter.split_text(content) if chunk.strip()]
+        elif content:
+            splitter = _build_splitter(
+                chunk_size=size,
+                overlap=overlap,
+                chunk_strategy=chunk_strategy,
+            )
+            pieces = [
+                (chunk.strip(), {"chunk_strategy": chunk_strategy})
+                for chunk in splitter.split_text(content)
+                if chunk.strip()
+            ]
         else:
             raise ValueError("Either content or file_path must be provided")
 

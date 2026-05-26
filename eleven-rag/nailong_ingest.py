@@ -32,6 +32,14 @@ def main() -> int:
     )
     parser.add_argument("--source", default="local-file")
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
+    parser.add_argument(
+        "--chunk-strategy",
+        default="recursive",
+        choices=["recursive", "markdown", "sentence"],
+        help="分片策略：recursive(默认) / markdown / sentence",
+    )
+    parser.add_argument("--chunk-size", type=int, default=None)
+    parser.add_argument("--chunk-overlap", type=int, default=None)
     args = parser.parse_args()
 
     import pathlib
@@ -50,6 +58,9 @@ def main() -> int:
         "document_id": document_id,
         "file_path": str(file_path),
         "source": args.source,
+        "chunk_strategy": args.chunk_strategy,
+        "chunk_size": args.chunk_size,
+        "chunk_overlap": args.chunk_overlap,
     }
 
     try:

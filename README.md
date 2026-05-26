@@ -1,6 +1,6 @@
-# Eleven-RAG (Minimal Runnable Skeleton)
+# Eleven Memory Agent Platform (EMAP)
 
-最小可运行 RAG 后端骨架，满足：
+最小可运行的记忆增强 Agent 后端骨架（内置 RAG 能力），满足：
 
 - `uv` 作为项目管理与运行工具
 - FastAPI API 可直接启动联调
@@ -11,7 +11,7 @@
 ## 1. 目录结构
 
 ```text
-Eleven-RAG/
+Eleven Memory Agent Platform/
 ├─ AGENTS.md
 ├─ BACKEND_GUIDE.md
 ├─ 需求分析.md
@@ -139,6 +139,9 @@ uv run --python 3.12 python eleven-rag/nailong_ingest.py docs/intro.md
 - `--document-id your-doc-id`
 - `--source local-file`
 - `--base-url http://127.0.0.1:8000`
+- `--chunk-strategy recursive|markdown|sentence`
+- `--chunk-size 500`
+- `--chunk-overlap 100`
 
 ## 2.1 关键概念（Embedding / bge-m3 / FAISS）
 
@@ -158,9 +161,18 @@ uv run --python 3.12 python eleven-rag/nailong_ingest.py docs/intro.md
 {
   "document_id": "doc-001",
   "content": "RAG is retrieval augmented generation ...",
-  "source": "manual"
+  "source": "manual",
+  "chunk_strategy": "recursive",
+  "chunk_size": 500,
+  "chunk_overlap": 100
 }
 ```
+
+- 分片策略（可选）：
+  - `recursive`：默认通用策略，兼顾中英文和自然段
+  - `markdown`：优先按 Markdown 标题与段落边界切分
+  - `sentence`：优先按句边界切分（中英文句号/问号/感叹号）
+- `chunk_size/chunk_overlap` 可按请求覆盖全局默认配置，且 `chunk_overlap < chunk_size`。
 
 - 返回：
 

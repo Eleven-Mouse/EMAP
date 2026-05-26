@@ -20,7 +20,7 @@ from evaluation.runner import EvaluationRunner
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run Eleven-RAG offline evaluation")
+    parser = argparse.ArgumentParser(description="Run EMAP offline evaluation")
     parser.add_argument(
         "--dataset",
         default="eval/sample_dataset.jsonl",

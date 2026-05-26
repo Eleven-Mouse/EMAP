@@ -11,12 +11,37 @@ from services.document_parser_service import DocumentParserService
 
 def test_ingestion_service_delegates_pipeline(monkeypatch):
     class FakePipeline:
-        def ingest(self, document_id, content, file_path, source):
-            return (document_id, content, file_path, source)
+        def ingest(
+            self,
+            document_id,
+            content,
+            file_path,
+            source,
+            chunk_strategy,
+            chunk_size,
+            chunk_overlap,
+        ):
+            return (
+                document_id,
+                content,
+                file_path,
+                source,
+                chunk_strategy,
+                chunk_size,
+                chunk_overlap,
+            )
 
     svc = IngestionService()
     svc._pipeline = FakePipeline()
-    assert svc.ingest("d1", "c", None, "manual") == ("d1", "c", None, "manual")
+    assert svc.ingest("d1", "c", None, "manual", "sentence", 256, 32) == (
+        "d1",
+        "c",
+        None,
+        "manual",
+        "sentence",
+        256,
+        32,
+    )
 
 
 def test_retrieval_service_delegates_qa():

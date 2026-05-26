@@ -7,8 +7,25 @@ from rag_system.facade import RAGSystem
 
 
 class FakePipeline:
-    def ingest(self, document_id, content, file_path, source):
-        return (document_id, content, file_path, source)
+    def ingest(
+        self,
+        document_id,
+        content,
+        file_path,
+        source,
+        chunk_strategy,
+        chunk_size,
+        chunk_overlap,
+    ):
+        return (
+            document_id,
+            content,
+            file_path,
+            source,
+            chunk_strategy,
+            chunk_size,
+            chunk_overlap,
+        )
 
 
 class FakeDocumentProcessor:
@@ -45,7 +62,7 @@ class FakeQA:
     def retrieve(self, query, top_k):
         return {"query": query, "top_k": top_k}
 
-    def ask(self, user_id, session_id, query, top_k):
+    def ask(self, user_id, session_id, query, top_k, doc_id_prefixes=None):
         return ("answer", [{"user_id": user_id, "session_id": session_id, "query": query, "top_k": top_k}])
 
 
@@ -59,7 +76,15 @@ def test_rag_system_facade_delegates_to_layer_objects():
 
     assert rag.parse_text("  hello  ") == "hello"
     assert rag.parse_file("a.pdf") == ["a.pdf"]
-    assert rag.ingest("d1", "c", None, "manual") == ("d1", "c", None, "manual")
+    assert rag.ingest("d1", "c", None, "manual", "markdown", 300, 30) == (
+        "d1",
+        "c",
+        None,
+        "manual",
+        "markdown",
+        300,
+        30,
+    )
     assert rag.embed_texts(["ab"]) == [[2.0]]
     assert rag.embed_query("abc") == [3.0]
     assert rag.search("q", 5) == [("q", 5)]

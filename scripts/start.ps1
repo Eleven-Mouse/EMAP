@@ -84,7 +84,7 @@ print("Redis ok")
   if (-not $NoReload) {
     $uvicornArgs += "--reload"
   }
-  Write-Step "Start Eleven-RAG API"
+  Write-Step "Start EMAP API"
   Write-Host "Health: http://127.0.0.1:$Port/health"
   & uv @uvicornArgs
 } finally {
