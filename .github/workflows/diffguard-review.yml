@@ -1,0 +1,26 @@
+name: DiffGuard Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: DiffGuard Code Review
+        # 用你自己的 diffguard 分支/标签（包含 api-base-url 支持）
+        uses: <你的GitHub用户名>/diffguard@main
+        with:
+          api-key: ${{ secrets.DIFFGUARD_API_KEY }}
+          provider: openai
+          model: MiMo-V2.5-Pro
+          api-base-url: https://token-plan-cn.xiaomimimo.com/v1
+          language: zh
+          comment-pr: true
+          enable-fp-filter: true
+          timeout-minutes: 10
