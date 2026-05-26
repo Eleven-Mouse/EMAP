@@ -1,7 +1,7 @@
 [project]
-name = "eleven-rag"
+name = "eleven-memory-agent-platform"
 version = "0.1.0"
-description = "Minimal runnable RAG backend skeleton for Eleven-RAG"
+description = "Memory-augmented agent backend with integrated RAG capabilities for EMAP"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 dependencies = [
