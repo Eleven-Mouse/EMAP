@@ -4,9 +4,10 @@
 
 - `uv` 作为项目管理与运行工具
 - FastAPI API 可直接启动联调
+- `eleven-agent-platform` 是唯一后端主入口
 - 检索链路包含“关键词 + 向量式相似度 + 重排（MVP简化版）”
 - 回答返回来源引用
-- 阶段 A 已支持本地持久化（SQLite 元数据 + 本地向量索引）
+- 当前已支持 MySQL 元数据、Redis 短时会话、FAISS 本地向量索引
 
 ## 1. 目录结构
 
@@ -18,10 +19,20 @@ Eleven Memory Agent Platform/
 ├─ .env.example
 ├─ pyproject.toml
 ├─ README.md
+├─ scripts/
+│  ├─ start.ps1
+│  ├─ evaluate_rag.py
+│  ├─ rebuild_faiss_index.py
+│  └─ manage_memory_schema.py
+├─ eval/
+│  ├─ sample_dataset.jsonl
+│  └─ e2e_dataset.jsonl
 └─ eleven-agent-platform/
    ├─ main.py
    ├─ core/
    │  └─ config.py
+   ├─ agent_system/
+   │  └─ facade.py
    ├─ controllers/
    │  ├─ health_controller.py
    │  ├─ ingestion_controller.py
@@ -33,8 +44,12 @@ Eleven Memory Agent Platform/
    │  ├─ ingestion_service.py
    │  ├─ retrieval_service.py
    │  ├─ chat_service.py
-   │  └─ memory_service.py
+   │  ├─ memory_service.py
+   │  ├─ mysql_pool.py
+   │  └─ llm_client.py
    ├─ repositories/
+   │  ├─ metadata_repository.py
+   │  ├─ vector_repository.py
    │  ├─ document_repository.py
    │  └─ memory_repository.py
    └─ schemas/
@@ -44,6 +59,8 @@ Eleven Memory Agent Platform/
       ├─ chat.py
       └─ memory.py
 ```
+
+仓库已收敛为单主入口：旧版 `eleven-rag` 目录已删除，启动、脚本、测试和文档均以 `eleven-agent-platform` 为准。
 
 ## 2. 启动方式（uv）
 
@@ -223,22 +240,27 @@ uv run --python 3.12 python eleven-agent-platform/nailong_ingest.py docs/intro.m
 1. `ingest`：输入文档 -> 切片 -> 写入 MySQL 元数据 -> 向量入本地索引文件。
 2. `retrieve`：关键词打分 + 向量相似度 + token 向量 fallback -> 混合分数重排 -> 返回 topK。
 3. `chat`：先检索证据 -> 结合用户偏好生成回答 -> 返回引用片段。
-4. `memory`：维护偏好和会话短时状态（MVP内存实现）。
+4. `memory`：偏好记忆写入 MySQL，会话短时状态写入 Redis，并在健康检查中暴露连接池与操作指标。
 
-## 5. MVP 与生产替换点
+## 5. 当前状态与生产替换点
 
-当前为可运行骨架，生产化按以下替换：
+当前为可运行骨架，已落地的能力和后续生产化替换点如下：
 
 - `repositories/metadata_repository.py`
-  - MySQL（文档元数据/关系）
+  - 当前：MySQL 存储文档与 chunk 元数据。
+  - 后续：补充迁移版本管理、删除一致性校验和更完整的索引策略。
 - `repositories/vector_repository.py`
-  - 本地索引升级为 FAISS + 真实 embedding
+  - 当前：FAISS + `BAAI/bge-m3` embedding，本地持久化索引和 chunk 映射。
+  - 后续：按部署需要替换为独立向量库，补充索引重建、增量同步和召回质量监控。
 - `repositories/memory_repository.py`
-  - MySQL（长期偏好）+ Redis（短时会话）
+  - 当前：MySQL 存长期偏好，Redis 存短时会话，并记录基础操作指标。
+  - 后续：补充多租户隔离、权限校验、删除追踪和缓存一致性治理。
 - `services/retrieval_service.py`
-  - 接入真实 embedding、BM25/关键词检索、reranker
+  - 当前：FAISS 召回 + 关键词/token/metadata 简化重排。
+  - 后续：接入 BM25/全文索引、真实 reranker 和离线评估闭环。
 - `services/chat_service.py`
-  - 接入真实 LLM 并保留来源引用约束
+  - 当前：支持 OpenAI 兼容 LLM 调用；未启用 LLM 时走模板化兜底回答，仍返回 `sources[]`。
+  - 后续：补充 LLM 调用重试、超时降级、响应格式修复和引用完整性校验。
 
 ## 6. 奶龙导入能力
 
