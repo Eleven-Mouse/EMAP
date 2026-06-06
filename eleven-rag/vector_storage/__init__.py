@@ -1,1 +1,0 @@
-"""Vector storage layer adapters."""
