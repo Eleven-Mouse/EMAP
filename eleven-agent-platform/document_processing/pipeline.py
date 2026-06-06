@@ -6,9 +6,9 @@ from document_processing.document_processor import DocumentProcessor
 
 def _build_splitter(chunk_size: int, overlap: int, chunk_strategy: str):
     strategy = (chunk_strategy or "recursive").strip().lower()
-    separators = ["\n\n", "\n", "。", "！", "？", " ", ""]
+    separators = ["\n\n", "\n", "。", "！", "？", ". ", "! ", "? ", " ", ""]
     if strategy == "markdown":
-        separators = ["\n# ", "\n## ", "\n### ", "\n\n", "\n", "。", " ", ""]
+        separators = ["\n# ", "\n## ", "\n### ", "\n\n", "\n", "。", "！", "？", " ", ""]
     elif strategy == "sentence":
         separators = ["。", "！", "？", ". ", "! ", "? ", "\n", " ", ""]
     elif strategy != "recursive":
@@ -103,3 +103,17 @@ class Pipeline:
         new_chunks = metadata_repository.list_chunks_by_doc(document_id)
         vector_repository.index_chunks([(c.chunk_id, c.content) for c in new_chunks])
         return count
+
+    def delete_document(self, document_id: str) -> int:
+        metadata_repository, vector_repository = self._get_repositories()
+        old_chunks = metadata_repository.list_chunks_by_doc(document_id)
+        if not old_chunks:
+            return 0
+
+        old_chunk_ids = [chunk.chunk_id for chunk in old_chunks]
+        deleted = metadata_repository.delete_document(document_id)
+        if not deleted:
+            return 0
+
+        vector_repository.remove_document_chunks(old_chunk_ids)
+        return len(old_chunk_ids)

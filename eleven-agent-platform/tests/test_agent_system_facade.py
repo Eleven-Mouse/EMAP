@@ -27,6 +27,9 @@ class FakePipeline:
             chunk_overlap,
         )
 
+    def delete_document(self, document_id):
+        return 1
+
 
 class FakeDocumentProcessor:
     def parse_text(self, content):
@@ -85,6 +88,7 @@ def test_agent_system_facade_delegates_to_layer_objects():
         300,
         30,
     )
+    assert rag.delete_document("d1") == 1
     assert rag.embed_texts(["ab"]) == [[2.0]]
     assert rag.embed_query("abc") == [3.0]
     assert rag.search("q", 5) == [("q", 5)]

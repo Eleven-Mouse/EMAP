@@ -31,6 +31,9 @@ def test_ingestion_service_delegates_pipeline(monkeypatch):
                 chunk_overlap,
             )
 
+        def delete_document(self, document_id):
+            return 2
+
     svc = IngestionService()
     svc._pipeline = FakePipeline()
     assert svc.ingest("d1", "c", None, "manual", "sentence", 256, 32) == (
@@ -42,6 +45,7 @@ def test_ingestion_service_delegates_pipeline(monkeypatch):
         256,
         32,
     )
+    assert svc.delete_document("d1") == 2
 
 
 def test_retrieval_service_delegates_qa():

@@ -14,7 +14,7 @@ jobs:
     steps:
       - name: DiffGuard Code Review
         # 用你自己的 diffguard 分支/标签（包含 api-base-url 支持）
-        uses: Eleven-Mouse/diffguard@main
+        uses: DiffGuard/diffguard-action@v1
         with:
           api-key: ${{ secrets.DIFFGUARD_API_KEY }}
           provider: openai

@@ -49,6 +49,14 @@ def _load_scripts() -> list[MigrationScript]:
             version_tag="v1_init_user_preferences",
             path=ROOT / "scripts" / "init_mysql_memory.sql",
         ),
+        MigrationScript(
+            version_tag="v2_preference_soft_delete_and_history",
+            path=ROOT / "scripts" / "init_mysql_memory_v2.sql",
+        ),
+        MigrationScript(
+            version_tag="v3_session_summaries",
+            path=ROOT / "scripts" / "init_mysql_memory_v3.sql",
+        ),
     ]
 
 
@@ -89,8 +97,69 @@ def _record_applied(
     connection.commit()
 
 
+def _column_exists(connection, table_name: str, column_name: str) -> bool:
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = DATABASE()
+              AND table_name = %s
+              AND column_name = %s
+            LIMIT 1
+            """,
+            (table_name, column_name),
+        )
+        return cursor.fetchone() is not None
+
+
+def _apply_v2_preference_soft_delete(connection) -> None:
+    has_is_deleted = _column_exists(connection, "user_preferences", "is_deleted")
+    has_deleted_at = _column_exists(connection, "user_preferences", "deleted_at")
+
+    with connection.cursor() as cursor:
+        if not has_is_deleted:
+            cursor.execute(
+                """
+                ALTER TABLE user_preferences
+                ADD COLUMN is_deleted TINYINT(1) NOT NULL DEFAULT 0 AFTER pref_value
+                """
+            )
+
+        if not has_deleted_at:
+            cursor.execute(
+                """
+                ALTER TABLE user_preferences
+                ADD COLUMN deleted_at TIMESTAMP NULL DEFAULT NULL AFTER updated_at
+                """
+            )
+
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_preference_versions (
+                version BIGINT PRIMARY KEY AUTO_INCREMENT,
+                user_id VARCHAR(128) NOT NULL,
+                pref_key VARCHAR(128) NOT NULL,
+                change_type VARCHAR(32) NOT NULL,
+                old_value TEXT NULL,
+                new_value TEXT NULL,
+                changed_by VARCHAR(128) NOT NULL,
+                change_reason VARCHAR(255) NOT NULL,
+                changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                KEY idx_pref_versions_user_key_ver (user_id, pref_key, version)
+            ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+            """
+        )
+    connection.commit()
+
+
 def _apply_script(connection, module_name: str, script: MigrationScript) -> str:
     script_sha = _script_sha256(script.path)
+    if script.version_tag == "v2_preference_soft_delete_and_history":
+        _apply_v2_preference_soft_delete(connection)
+        _record_applied(connection, module_name, script, script_sha)
+        return script_sha
+
     sql = script.path.read_text(encoding="utf-8")
     statements = _parse_sql_statements(sql)
 
@@ -108,7 +177,8 @@ def run(action: str, dry_run: bool) -> int:
     engine = create_engine(settings.mysql_dsn, pool_pre_ping=True)
     scripts = _load_scripts()
 
-    with engine.raw_connection() as connection:
+    connection = engine.raw_connection()
+    try:
         _ensure_schema_table(connection)
 
         if action == "status":
@@ -130,6 +200,8 @@ def run(action: str, dry_run: bool) -> int:
 
             script_sha = _apply_script(connection, module_name, script)
             print(f"APPLY {script.version_tag} {script.path.name} sha256={script_sha}")
+    finally:
+        connection.close()
 
     return 0
 

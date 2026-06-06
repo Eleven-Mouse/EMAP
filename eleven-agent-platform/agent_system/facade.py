@@ -72,6 +72,9 @@ class AgentSystem:
             chunk_overlap=chunk_overlap,
         )
 
+    def delete_document(self, document_id: str) -> int:
+        return self._get_pipeline().delete_document(document_id)
+
     def warmup_embedding(self) -> None:
         self._get_embedding_service().warmup()
 
@@ -109,9 +112,72 @@ class AgentSystem:
             doc_id_prefixes=doc_id_prefixes,
         )
 
-    def upsert_preference(self, user_id: str, key: str, value: str) -> None:
-        self._get_memory_service().upsert_preference(user_id, key, value)
+    def upsert_preference(
+        self,
+        user_id: str,
+        key: str,
+        value: str,
+        changed_by: str = "api",
+        change_reason: str = "upsert",
+    ) -> None:
+        self._get_memory_service().upsert_preference(
+            user_id=user_id,
+            key=key,
+            value=value,
+            changed_by=changed_by,
+            change_reason=change_reason,
+        )
 
     def list_preferences(self, user_id: str):
         return self._get_memory_service().list_preferences(user_id)
+
+    def delete_preference(
+        self,
+        user_id: str,
+        key: str,
+        changed_by: str = "api",
+        change_reason: str = "delete",
+    ) -> bool:
+        return self._get_memory_service().delete_preference(
+            user_id=user_id,
+            key=key,
+            changed_by=changed_by,
+            change_reason=change_reason,
+        )
+
+    def get_preference_history(self, user_id: str, key: str):
+        return self._get_memory_service().get_preference_history(user_id=user_id, key=key)
+
+    def rollback_preference(
+        self,
+        user_id: str,
+        key: str,
+        target_version: int | None = None,
+        changed_by: str = "api",
+        change_reason: str = "rollback",
+    ) -> bool:
+        return self._get_memory_service().rollback_preference(
+            user_id=user_id,
+            key=key,
+            target_version=target_version,
+            changed_by=changed_by,
+            change_reason=change_reason,
+        )
+
+    def upsert_session_summary(
+        self,
+        user_id: str,
+        session_id: str,
+        summary_text: str,
+        last_message_count: int,
+    ) -> None:
+        self._get_memory_service().upsert_session_summary(
+            user_id=user_id,
+            session_id=session_id,
+            summary_text=summary_text,
+            last_message_count=last_message_count,
+        )
+
+    def list_session_summaries(self, user_id: str, limit: int = 3):
+        return self._get_memory_service().list_session_summaries(user_id=user_id, limit=limit)
 

@@ -70,7 +70,7 @@ def _hybrid_score(
 
 class AnswerOutput(BaseModel):
     final_output: str = Field(
-        description="最终给用户展示的中文回答正文（仅此字段用于展示）"
+        description="最终展示给用户的中文回答正文，仅该字段用于展示。"
     )
 
 
@@ -160,15 +160,14 @@ class IntelligentQA:
             {
                 "role": "system",
                 "content": (
-                    "你是“奶龙”风格的RAG问答助手：语气亲切、轻松、带一点幽默，"
-                    "但事实判断必须严谨克制。"
-                    "你必须遵守以下规则："
+                    "你是“奶龙”风格的 RAG 问答助手：语气亲切、轻松、带一点幽默，"
+                    "但事实判断必须严谨克制。你必须遵守以下规则："
                     "1) 只能基于给定检索证据回答，不得编造；"
-                    "2) 关键结论必须带引用chunk_id，例如 [doc-1-chunk-0]；"
+                    "2) 关键结论必须带引用 chunk_id，例如 [doc-1-chunk-0]；"
                     "3) 证据不足时要明确说不知道，并说明缺少什么信息；"
-                    "4) 回答优先清晰和可追溯，不要为了幽默牺牲准确性；"
+                    "4) 回答优先清晰和可追溯，不要为了风格牺牲准确性；"
                     "5) 可以使用简短的奶龙口吻开场或收尾，但避免冗长表演；"
-                    "6) 严禁输出思考过程（chain-of-thought）或任何中间推理内容。"
+                    "6) 严禁输出思考过程、chain-of-thought 或任何中间推理内容。"
                 ),
             },
             {"role": "user", "content": user_prompt},
@@ -229,14 +228,18 @@ class IntelligentQA:
                     hit
                     for hit in vector_hits
                     if any(
-                        (chunk_map.get(hit.chunk_id) and chunk_map[hit.chunk_id].document_id.startswith(prefix))
+                        (
+                            chunk_map.get(hit.chunk_id)
+                            and chunk_map[hit.chunk_id].document_id.startswith(prefix)
+                        )
                         for prefix in prefixes
                     )
                 ]
         vector_score_map = {hit.chunk_id: hit.score for hit in vector_hits}
+        valid_vector_hits = [hit for hit in vector_hits if hit.chunk_id in chunk_map]
 
         scored = []
-        candidate_ids = {hit.chunk_id for hit in vector_hits}
+        candidate_ids = {hit.chunk_id for hit in valid_vector_hits}
         for chunk in chunks:
             if candidate_ids and chunk.chunk_id not in candidate_ids:
                 continue
@@ -247,7 +250,7 @@ class IntelligentQA:
                 scored.append((score, chunk.chunk_id))
 
         if not scored:
-            for hit in vector_hits[:top_k]:
+            for hit in valid_vector_hits[:top_k]:
                 scored.append((hit.score * 0.5, hit.chunk_id))
 
         if not scored:

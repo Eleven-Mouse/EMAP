@@ -7,8 +7,9 @@ from repositories.metadata_repository import MetadataRepository  # noqa: E402
 
 
 class FakeCursor:
-    def __init__(self, fetch_rows=None):
+    def __init__(self, fetch_rows=None, rowcount=1):
         self.fetch_rows = fetch_rows or []
+        self.rowcount = rowcount
         self.executed = []
 
     def execute(self, sql, params=()):
@@ -28,8 +29,8 @@ class FakeCursor:
 
 
 class FakeMysql:
-    def __init__(self, fetch_rows=None):
-        self.cursor_obj = FakeCursor(fetch_rows)
+    def __init__(self, fetch_rows=None, rowcount=1):
+        self.cursor_obj = FakeCursor(fetch_rows, rowcount=rowcount)
         self.commits = 0
 
     def cursor(self):
@@ -69,3 +70,17 @@ def test_retry_then_succeed():
     chunks = repo.list_chunks_by_doc("d1")
 
     assert chunks[0].chunk_id == "c1"
+
+
+def test_delete_document_returns_true_when_rows_affected():
+    mysql = FakeMysql(rowcount=1)
+    repo = MetadataRepository(mysql)
+    deleted = repo.delete_document("d1")
+    assert deleted is True
+
+
+def test_delete_document_returns_false_when_no_rows_affected():
+    mysql = FakeMysql(rowcount=0)
+    repo = MetadataRepository(mysql)
+    deleted = repo.delete_document("missing")
+    assert deleted is False

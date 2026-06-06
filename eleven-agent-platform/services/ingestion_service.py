@@ -24,3 +24,6 @@ class IngestionService:
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
         )
+
+    def delete_document(self, document_id: str) -> int:
+        return self._pipeline.delete_document(document_id)

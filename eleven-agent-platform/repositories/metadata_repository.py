@@ -170,3 +170,16 @@ class MetadataRepository:
             )
             for r in rows
         ]
+
+    def delete_document(self, document_id: str) -> bool:
+        def _inner() -> bool:
+            with self.mysql_client.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM documents WHERE document_id = %s",
+                    (document_id,),
+                )
+                affected = int(getattr(cursor, "rowcount", 0))
+            self.mysql_client.commit()
+            return affected > 0
+
+        return bool(self._run_with_retry(_inner))

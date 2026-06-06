@@ -17,18 +17,24 @@ class FakeChunk:
 class FakeMetadataRepository:
     def __init__(self) -> None:
         self.replaced_chunks: list[tuple[str, dict]] = []
+        self.documents: dict[str, list[tuple[str, dict]]] = {}
 
     def list_chunks_by_doc(self, document_id: str):
-        if self.replaced_chunks:
+        if document_id in self.documents:
+            chunks = self.documents[document_id]
             return [
                 FakeChunk(chunk_id=f"{document_id}-chunk-{idx}", content=text)
-                for idx, (text, _) in enumerate(self.replaced_chunks)
+                for idx, (text, _) in enumerate(chunks)
             ]
         return []
 
     def replace_chunks(self, document_id: str, source: str, chunks: list[tuple[str, dict]]) -> int:
         self.replaced_chunks = chunks
+        self.documents[document_id] = chunks
         return len(chunks)
+
+    def delete_document(self, document_id: str) -> bool:
+        return self.documents.pop(document_id, None) is not None
 
 
 class FakeVectorRepository:
@@ -96,3 +102,22 @@ def test_ingest_rejects_invalid_overlap():
             chunk_size=200,
             chunk_overlap=200,
         )
+
+
+def test_delete_document_removes_metadata_and_vectors():
+    pipeline, metadata, vector = _build_pipeline()
+    pipeline.ingest(
+        document_id="doc-1",
+        content="第一段。第二段。",
+        file_path=None,
+        source="manual",
+        chunk_strategy="recursive",
+        chunk_size=50,
+        chunk_overlap=0,
+    )
+
+    deleted_count = pipeline.delete_document("doc-1")
+
+    assert deleted_count > 0
+    assert metadata.list_chunks_by_doc("doc-1") == []
+    assert len(vector.removed) == deleted_count

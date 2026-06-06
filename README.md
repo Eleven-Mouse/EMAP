@@ -6,7 +6,7 @@
 - FastAPI API 可直接启动联调
 - 检索链路包含“关键词 + 向量式相似度 + 重排（MVP简化版）”
 - 回答返回来源引用
-- 阶段 A 已支持本地持久化（SQLite 元数据 + 本地向量索引）
+- 阶段 A 已支持持久化（MySQL 元数据/偏好记忆 + Redis 会话状态 + 本地 FAISS 向量索引）
 
 ## 1. 目录结构
 
@@ -217,26 +217,29 @@ uv run --python 3.12 python eleven-agent-platform/nailong_ingest.py docs/intro.m
 
 - `POST /v1/memory/preferences`
 - `GET /v1/memory/preferences/{user_id}`
+- `DELETE /v1/memory/preferences`
+- `GET /v1/memory/preferences/{user_id}/{key}/history`
+- `POST /v1/memory/preferences/rollback`
 
 ## 4. 最小数据流
 
 1. `ingest`：输入文档 -> 切片 -> 写入 MySQL 元数据 -> 向量入本地索引文件。
 2. `retrieve`：关键词打分 + 向量相似度 + token 向量 fallback -> 混合分数重排 -> 返回 topK。
 3. `chat`：先检索证据 -> 结合用户偏好生成回答 -> 返回引用片段。
-4. `memory`：维护偏好和会话短时状态（MVP内存实现）。
+4. `memory`：MySQL 维护偏好记忆与审计版本，Redis 维护会话短时状态。
 
 ## 5. MVP 与生产替换点
 
 当前为可运行骨架，生产化按以下替换：
 
 - `repositories/metadata_repository.py`
-  - MySQL（文档元数据/关系）
+  - 当前为 MySQL（文档元数据/关系），生产化需补充分层索引、分页检索与大文档治理
 - `repositories/vector_repository.py`
-  - 本地索引升级为 FAISS + 真实 embedding
+  - 当前为本地 FAISS + 真实 embedding，生产化可替换为独立向量库或托管检索服务
 - `repositories/memory_repository.py`
-  - MySQL（长期偏好）+ Redis（短时会话）
+  - 当前为 MySQL（长期偏好）+ Redis（短时会话），生产化需补充跨实例治理与外部监控
 - `services/retrieval_service.py`
-  - 接入真实 embedding、BM25/关键词检索、reranker
+  - 接入 BM25/关键词倒排、专业 reranker 与分页候选召回
 - `services/chat_service.py`
   - 接入真实 LLM 并保留来源引用约束
 

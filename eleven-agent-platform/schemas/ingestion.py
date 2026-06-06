@@ -38,3 +38,9 @@ class IngestRequest(BaseModel):
 class IngestResponse(BaseModel):
     document_id: str
     chunk_count: int
+
+
+class DeleteDocumentResponse(BaseModel):
+    document_id: str
+    deleted_chunk_count: int
+    status: str

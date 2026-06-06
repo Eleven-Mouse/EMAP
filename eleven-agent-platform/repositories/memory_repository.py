@@ -22,7 +22,13 @@ class MemoryRepository:
         self.failure_alert_threshold = max(1, int(self.failure_alert_threshold))
         self._metrics: dict[str, dict[str, float | int]] = {
             "upsert_preference": {"calls": 0, "failures": 0, "slow_calls": 0, "avg_ms": 0.0},
+            "delete_preference": {"calls": 0, "failures": 0, "slow_calls": 0, "avg_ms": 0.0},
+            "rollback_preference": {"calls": 0, "failures": 0, "slow_calls": 0, "avg_ms": 0.0},
             "get_preferences": {"calls": 0, "failures": 0, "slow_calls": 0, "avg_ms": 0.0},
+            "get_preference_history": {"calls": 0, "failures": 0, "slow_calls": 0, "avg_ms": 0.0},
+            "upsert_session_summary": {"calls": 0, "failures": 0, "slow_calls": 0, "avg_ms": 0.0},
+            "list_session_summaries": {"calls": 0, "failures": 0, "slow_calls": 0, "avg_ms": 0.0},
+            "get_session_summary_checkpoint": {"calls": 0, "failures": 0, "slow_calls": 0, "avg_ms": 0.0},
             "append_session_message": {"calls": 0, "failures": 0, "slow_calls": 0, "avg_ms": 0.0},
             "get_session_messages": {"calls": 0, "failures": 0, "slow_calls": 0, "avg_ms": 0.0},
         }
@@ -80,25 +86,107 @@ class MemoryRepository:
         assert last_exc is not None
         raise last_exc
 
-    def _execute(self, sql: str, params: tuple) -> None:
+    def _execute(self, op_name: str, sql: str, params: tuple) -> None:
         def _inner() -> None:
             with self.mysql_client.cursor() as cursor:
                 cursor.execute(sql, params)
             self.mysql_client.commit()
 
-        self._run_with_retry("upsert_preference", _inner)
+        self._run_with_retry(op_name, _inner)
 
-    def upsert_preference(self, user_id: str, key: str, value: str) -> None:
-        self._execute(
+    @staticmethod
+    def _current_value(row) -> str | None:
+        if row is None:
+            return None
+        if len(row) < 2:
+            return row[0]
+        return row[0]
+
+    @staticmethod
+    def _is_deleted(row) -> bool:
+        return bool(row[1]) if row and len(row) > 1 else False
+
+    @staticmethod
+    def _write_version_row(
+        cursor,
+        user_id: str,
+        key: str,
+        change_type: str,
+        old_value: str | None,
+        new_value: str | None,
+        changed_by: str,
+        change_reason: str,
+    ) -> None:
+        cursor.execute(
             """
-            INSERT INTO user_preferences (user_id, pref_key, pref_value)
-            VALUES (%s, %s, %s)
-            ON DUPLICATE KEY UPDATE
-                pref_value = VALUES(pref_value),
-                updated_at = CURRENT_TIMESTAMP
+            INSERT INTO user_preference_versions (
+                user_id,
+                pref_key,
+                change_type,
+                old_value,
+                new_value,
+                changed_by,
+                change_reason
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             """,
-            (user_id, key, value),
+            (user_id, key, change_type, old_value, new_value, changed_by, change_reason),
         )
+
+    @staticmethod
+    def _fetch_preference_row(cursor, user_id: str, key: str):
+        cursor.execute(
+            """
+            SELECT pref_value, is_deleted
+            FROM user_preferences
+            WHERE user_id = %s AND pref_key = %s
+            LIMIT 1
+            """,
+            (user_id, key),
+        )
+        return cursor.fetchone()
+
+    def upsert_preference(
+        self,
+        user_id: str,
+        key: str,
+        value: str,
+        changed_by: str = "api",
+        change_reason: str = "upsert",
+    ) -> None:
+        def _inner() -> None:
+            with self.mysql_client.cursor() as cursor:
+                row = self._fetch_preference_row(cursor, user_id, key)
+                old_value = self._current_value(row)
+                was_deleted = self._is_deleted(row)
+
+                cursor.execute(
+                    """
+                    INSERT INTO user_preferences (user_id, pref_key, pref_value, is_deleted, deleted_at)
+                    VALUES (%s, %s, %s, 0, NULL)
+                    ON DUPLICATE KEY UPDATE
+                        pref_value = VALUES(pref_value),
+                        is_deleted = 0,
+                        deleted_at = NULL,
+                        updated_at = CURRENT_TIMESTAMP
+                    """,
+                    (user_id, key, value),
+                )
+
+                change_type = "create" if row is None else ("restore" if was_deleted else "update")
+                self._write_version_row(
+                    cursor,
+                    user_id=user_id,
+                    key=key,
+                    change_type=change_type,
+                    old_value=old_value,
+                    new_value=value,
+                    changed_by=changed_by,
+                    change_reason=change_reason,
+                )
+            self.mysql_client.commit()
+
+        self._run_with_retry("upsert_preference", _inner)
 
     def get_preferences(self, user_id: str) -> dict[str, str]:
         def _inner():
@@ -108,6 +196,7 @@ class MemoryRepository:
                     SELECT pref_key, pref_value
                     FROM user_preferences
                     WHERE user_id = %s
+                      AND is_deleted = 0
                     ORDER BY updated_at ASC, id ASC
                     """,
                     (user_id,),
@@ -116,6 +205,188 @@ class MemoryRepository:
 
         rows = self._run_with_retry("get_preferences", _inner)
         return {row[0]: row[1] for row in rows}
+
+    def delete_preference(
+        self,
+        user_id: str,
+        key: str,
+        changed_by: str = "api",
+        change_reason: str = "delete",
+    ) -> bool:
+        def _inner() -> bool:
+            with self.mysql_client.cursor() as cursor:
+                row = self._fetch_preference_row(cursor, user_id, key)
+                if row is None or self._is_deleted(row):
+                    return False
+
+                old_value = self._current_value(row)
+                cursor.execute(
+                    """
+                    UPDATE user_preferences
+                    SET is_deleted = 1,
+                        deleted_at = CURRENT_TIMESTAMP,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE user_id = %s AND pref_key = %s AND is_deleted = 0
+                    """,
+                    (user_id, key),
+                )
+                self._write_version_row(
+                    cursor,
+                    user_id=user_id,
+                    key=key,
+                    change_type="delete",
+                    old_value=old_value,
+                    new_value=None,
+                    changed_by=changed_by,
+                    change_reason=change_reason,
+                )
+            self.mysql_client.commit()
+            return True
+
+        return bool(self._run_with_retry("delete_preference", _inner))
+
+    def rollback_preference(
+        self,
+        user_id: str,
+        key: str,
+        target_version: int | None = None,
+        changed_by: str = "api",
+        change_reason: str = "rollback",
+    ) -> bool:
+        def _inner() -> bool:
+            with self.mysql_client.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        user_id,
+                        pref_key,
+                        version,
+                        change_type,
+                        old_value,
+                        new_value,
+                        changed_by,
+                        change_reason,
+                        changed_at
+                    FROM user_preference_versions
+                    WHERE user_id = %s AND pref_key = %s
+                    ORDER BY version ASC
+                    """,
+                    (user_id, key),
+                )
+                history = list(cursor.fetchall())
+                if not history:
+                    return False
+
+                target_row = None
+                if target_version is None:
+                    target_row = history[-1]
+                else:
+                    for row in history:
+                        if int(row[2]) == int(target_version):
+                            target_row = row
+                            break
+                if target_row is None:
+                    return False
+
+                current_row = self._fetch_preference_row(cursor, user_id, key)
+                current_value = self._current_value(current_row)
+
+                if target_version is None:
+                    if target_row[3] == "delete":
+                        restore_value = target_row[4]
+                    else:
+                        restore_value = None
+                        for row in reversed(history[:-1]):
+                            if row[5] is not None:
+                                restore_value = row[5]
+                                break
+                else:
+                    restore_value = target_row[5] if target_row[5] is not None else target_row[4]
+
+                if target_version is None and restore_value is None:
+                    if current_row is None or self._is_deleted(current_row):
+                        return False
+                    cursor.execute(
+                        """
+                        UPDATE user_preferences
+                        SET is_deleted = 1,
+                            deleted_at = CURRENT_TIMESTAMP,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE user_id = %s AND pref_key = %s AND is_deleted = 0
+                        """,
+                        (user_id, key),
+                    )
+                    self._write_version_row(
+                        cursor,
+                        user_id=user_id,
+                        key=key,
+                        change_type="rollback",
+                        old_value=current_value,
+                        new_value=None,
+                        changed_by=changed_by,
+                        change_reason=change_reason,
+                    )
+                    self.mysql_client.commit()
+                    return True
+
+                if restore_value is None:
+                    return False
+
+                cursor.execute(
+                    """
+                    INSERT INTO user_preferences (user_id, pref_key, pref_value, is_deleted, deleted_at)
+                    VALUES (%s, %s, %s, 0, NULL)
+                    ON DUPLICATE KEY UPDATE
+                        pref_value = VALUES(pref_value),
+                        is_deleted = 0,
+                        deleted_at = NULL,
+                        updated_at = CURRENT_TIMESTAMP
+                    """,
+                    (user_id, key, restore_value),
+                )
+                self._write_version_row(
+                    cursor,
+                    user_id=user_id,
+                    key=key,
+                    change_type="rollback",
+                    old_value=current_value,
+                    new_value=restore_value,
+                    changed_by=changed_by,
+                    change_reason=change_reason,
+                )
+            self.mysql_client.commit()
+            return True
+
+        return bool(self._run_with_retry("rollback_preference", _inner))
+
+    def get_preference_history(
+        self,
+        user_id: str,
+        key: str,
+    ) -> list[tuple]:
+        def _inner():
+            with self.mysql_client.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        user_id,
+                        pref_key,
+                        version,
+                        change_type,
+                        old_value,
+                        new_value,
+                        changed_by,
+                        change_reason,
+                        changed_at
+                    FROM user_preference_versions
+                    WHERE user_id = %s AND pref_key = %s
+                    ORDER BY version ASC
+                    """,
+                    (user_id, key),
+                )
+                return cursor.fetchall()
+
+        return list(self._run_with_retry("get_preference_history", _inner))
 
     def append_session_message(self, session_id: str, message: str) -> None:
         def _inner() -> None:
@@ -140,6 +411,71 @@ class MemoryRepository:
                 item = item.decode("utf-8")
             messages.append(str(item))
         return messages
+
+    def upsert_session_summary(
+        self,
+        user_id: str,
+        session_id: str,
+        summary_text: str,
+        last_message_count: int,
+    ) -> None:
+        def _inner() -> None:
+            with self.mysql_client.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO session_summaries (
+                        user_id,
+                        session_id,
+                        summary_text,
+                        last_message_count
+                    )
+                    VALUES (%s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                        summary_text = VALUES(summary_text),
+                        updated_at = CURRENT_TIMESTAMP
+                    """,
+                    (user_id, session_id, summary_text, last_message_count),
+                )
+            self.mysql_client.commit()
+
+        self._run_with_retry("upsert_session_summary", _inner)
+
+    def list_session_summaries(self, user_id: str, limit: int = 3) -> list[tuple]:
+        safe_limit = max(1, int(limit))
+
+        def _inner():
+            with self.mysql_client.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT user_id, session_id, summary_text, last_message_count, updated_at
+                    FROM session_summaries
+                    WHERE user_id = %s
+                    ORDER BY updated_at DESC, id DESC
+                    LIMIT %s
+                    """,
+                    (user_id, safe_limit),
+                )
+                return cursor.fetchall()
+
+        return list(self._run_with_retry("list_session_summaries", _inner))
+
+    def get_session_summary_checkpoint(self, session_id: str) -> int:
+        def _inner():
+            with self.mysql_client.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT COALESCE(MAX(last_message_count), 0)
+                    FROM session_summaries
+                    WHERE session_id = %s
+                    """,
+                    (session_id,),
+                )
+                return cursor.fetchone()
+
+        row = self._run_with_retry("get_session_summary_checkpoint", _inner)
+        if not row:
+            return 0
+        return int(row[0] or 0)
 
     def get_metrics_snapshot(self) -> dict[str, dict[str, float | int]]:
         snapshot: dict[str, dict[str, float | int]] = {}

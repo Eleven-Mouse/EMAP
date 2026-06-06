@@ -118,6 +118,18 @@ class Settings:
         self.session_max_messages = _to_int(
             os.getenv("SESSION_MAX_MESSAGES", "100"), 100
         )
+        self.summary_interval_rounds = _to_int(
+            os.getenv("SUMMARY_INTERVAL_ROUNDS", "8"), 8
+        )
+        self.summary_window_messages = _to_int(
+            os.getenv("SUMMARY_WINDOW_MESSAGES", "16"), 16
+        )
+        self.prompt_window_messages = _to_int(
+            os.getenv("PROMPT_WINDOW_MESSAGES", "8"), 8
+        )
+        self.prompt_summary_max_items = _to_int(
+            os.getenv("PROMPT_SUMMARY_MAX_ITEMS", "3"), 3
+        )
         self.metadata_db_path = os.getenv(
             "METADATA_DB_PATH", f"{self.rag_store_dir}/metadata.db"
         )
