@@ -78,6 +78,24 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Fail if citation_coverage_rate falls below this threshold",
     )
+    parser.add_argument(
+        "--min-refusal-match-rate",
+        type=float,
+        default=None,
+        help="Fail if safety_metrics.refusal_match_rate falls below this threshold",
+    )
+    parser.add_argument(
+        "--min-citation-validity-rate",
+        type=float,
+        default=None,
+        help="Fail if safety_metrics.citation_validity_rate falls below this threshold",
+    )
+    parser.add_argument(
+        "--max-forbidden-chunk-leak-rate",
+        type=float,
+        default=None,
+        help="Fail if safety_metrics.forbidden_chunk_leak_rate rises above this threshold",
+    )
     return parser.parse_args()
 
 
@@ -89,6 +107,9 @@ def main() -> int:
         min_context_precision=args.min_context_precision,
         min_context_recall=args.min_context_recall,
         min_citation_coverage=args.min_citation_coverage,
+        min_refusal_match_rate=args.min_refusal_match_rate,
+        min_citation_validity_rate=args.min_citation_validity_rate,
+        max_forbidden_chunk_leak_rate=args.max_forbidden_chunk_leak_rate,
     )
     validate_constraints(constraints)
 
@@ -110,6 +131,9 @@ def main() -> int:
             "min_context_precision": constraints.min_context_precision,
             "min_context_recall": constraints.min_context_recall,
             "min_citation_coverage": constraints.min_citation_coverage,
+            "min_refusal_match_rate": constraints.min_refusal_match_rate,
+            "min_citation_validity_rate": constraints.min_citation_validity_rate,
+            "max_forbidden_chunk_leak_rate": constraints.max_forbidden_chunk_leak_rate,
         },
         **constraint_result,
     }
@@ -127,6 +151,7 @@ def main() -> int:
     print(f"[eval] average_context_precision={summary['average_context_precision']}")
     print(f"[eval] average_context_recall={summary['average_context_recall']}")
     print(f"[eval] citation_coverage_rate={summary['citation_coverage_rate']}")
+    print(f"[eval] safety_metrics={json.dumps(summary.get('safety_metrics') or {}, ensure_ascii=False)}")
 
     ragas_metrics = summary.get("ragas_metrics") or {}
     if ragas_metrics:

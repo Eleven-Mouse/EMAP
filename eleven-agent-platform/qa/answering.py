@@ -1,71 +1,46 @@
-import json
+import math
 
+from audit.audit_logger import AuditLogger
+from authz.access_control import AccessController
 from core.config import settings
+from guards.input_guard import InputGuard
+from guards.output_guard import OutputGuard, build_grounded_safe_answer
 from langchain_core.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
+from qa.retrieval_stack import BM25Retriever, CrossEncoderReranker
 from schemas.common import SourceItem
-from services.text_utils import tokenize_text
 
 
-def _keyword_score(query_tokens: set[str], text_tokens: set[str]) -> float:
-    if not query_tokens or not text_tokens:
-        return 0.0
-    overlap = query_tokens.intersection(text_tokens)
-    return len(overlap) / len(query_tokens)
+def _normalize_weights(weight_map: dict[str, float]) -> dict[str, float]:
+    positive_weights = {key: max(0.0, value) for key, value in weight_map.items()}
+    total = sum(positive_weights.values())
+    if total <= 0:
+        even = 1.0 / max(1, len(weight_map))
+        return {key: even for key in weight_map}
+    return {key: value / total for key, value in positive_weights.items()}
 
 
-def _vector_like_score(query_tokens: set[str], text_tokens: set[str]) -> float:
-    if not query_tokens or not text_tokens:
-        return 0.0
-    overlap = query_tokens.intersection(text_tokens)
-    denom = len(query_tokens.union(text_tokens))
-    return len(overlap) / max(1, denom)
+def _normalize_score_map(
+    raw_scores: dict[str, float],
+    candidate_ids: list[str],
+) -> dict[str, float]:
+    values = [raw_scores[cid] for cid in candidate_ids if cid in raw_scores]
+    if not values:
+        return {cid: 0.0 for cid in candidate_ids}
 
+    min_score = min(values)
+    max_score = max(values)
+    if math.isclose(min_score, max_score):
+        fill_value = 1.0 if max_score > 0 else 0.0
+        return {cid: fill_value if cid in raw_scores else 0.0 for cid in candidate_ids}
 
-def _parse_metadata(metadata_json: str) -> dict:
-    try:
-        parsed = json.loads(metadata_json or "{}")
-    except json.JSONDecodeError:
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
-
-
-def _metadata_boost(metadata: dict, query_tokens: set[str]) -> float:
-    boost = 0.0
-    category = metadata.get("category")
-    if category == "Title":
-        boost += 0.08
-
-    depth = metadata.get("category_depth")
-    if isinstance(depth, int) and depth <= 1:
-        boost += 0.03
-
-    filename = metadata.get("filename")
-    if isinstance(filename, str) and query_tokens:
-        file_tokens = set(tokenize_text(filename))
-        overlap = query_tokens.intersection(file_tokens)
-        if overlap:
-            boost += min(0.06, 0.02 * len(overlap))
-
-    filetype = metadata.get("filetype")
-    if filetype == "text/markdown":
-        boost += 0.02
-    return boost
-
-
-def _hybrid_score(
-    query: str,
-    content: str,
-    vector_score: float,
-    metadata: dict | None = None,
-) -> float:
-    query_tokens = set(tokenize_text(query))
-    text_tokens = set(tokenize_text(content))
-    kw = _keyword_score(query_tokens, text_tokens)
-    token_vec = _vector_like_score(query_tokens, text_tokens)
-    meta = _metadata_boost(metadata or {}, query_tokens)
-    # FAISS recall first, then lexical + metadata rerank.
-    return vector_score * 0.60 + kw * 0.20 + token_vec * 0.10 + meta
+    normalized: dict[str, float] = {}
+    for cid in candidate_ids:
+        if cid not in raw_scores:
+            normalized[cid] = 0.0
+            continue
+        normalized[cid] = (raw_scores[cid] - min_score) / (max_score - min_score)
+    return normalized
 
 
 class AnswerOutput(BaseModel):
@@ -78,6 +53,13 @@ class IntelligentQA:
     def __init__(self) -> None:
         self._memory_service = None
         self._llm_client = None
+        self._bm25_retriever = None
+        self._reranker = None
+        self._input_guard = None
+        self._output_guard = None
+        self._access_controller = None
+        self._audit_logger = None
+        self._last_trace = None
         self._answer_parser = PydanticOutputParser(pydantic_object=AnswerOutput)
 
     def _get_memory_service(self):
@@ -104,6 +86,93 @@ class IntelligentQA:
 
         return metadata_repository, vector_repository
 
+    def _get_input_guard(self) -> InputGuard:
+        if self._input_guard is None:
+            self._input_guard = InputGuard()
+        return self._input_guard
+
+    def _get_output_guard(self) -> OutputGuard:
+        if self._output_guard is None:
+            self._output_guard = OutputGuard()
+        return self._output_guard
+
+    def _get_access_controller(self) -> AccessController:
+        if self._access_controller is None:
+            self._access_controller = AccessController(
+                enabled=settings.authz_enabled,
+                default_allow=settings.authz_default_allow,
+                raw_rules=settings.user_doc_permissions,
+            )
+        return self._access_controller
+
+    def _get_audit_logger(self) -> AuditLogger:
+        if self._audit_logger is None:
+            self._audit_logger = AuditLogger(
+                enabled=settings.audit_log_enabled,
+                log_path=settings.audit_log_path,
+            )
+        return self._audit_logger
+
+    def _get_bm25_retriever(self) -> BM25Retriever:
+        if self._bm25_retriever is None:
+            self._bm25_retriever = BM25Retriever(
+                k1=settings.bm25_k1,
+                b=settings.bm25_b,
+            )
+        return self._bm25_retriever
+
+    def _get_reranker(self) -> CrossEncoderReranker:
+        if self._reranker is None:
+            self._reranker = CrossEncoderReranker(
+                model_name=settings.reranker_model_name,
+                cache_dir=settings.reranker_cache_dir,
+                device=settings.reranker_device,
+                batch_size=settings.reranker_batch_size,
+                local_files_only=settings.reranker_local_files_only,
+            )
+        return self._reranker
+
+    @staticmethod
+    def _filter_chunks(chunks, doc_id_prefixes: list[str] | None):
+        if not doc_id_prefixes:
+            return chunks
+        prefixes = [prefix.strip() for prefix in doc_id_prefixes if prefix and prefix.strip()]
+        if not prefixes:
+            return chunks
+        return [
+            chunk
+            for chunk in chunks
+            if any(chunk.document_id.startswith(prefix) for prefix in prefixes)
+        ]
+
+    @staticmethod
+    def _compose_scores(
+        candidate_ids: list[str],
+        bm25_scores: dict[str, float],
+        vector_scores: dict[str, float],
+        reranker_scores: dict[str, float] | None = None,
+    ) -> dict[str, float]:
+        normalized_bm25 = _normalize_score_map(bm25_scores, candidate_ids)
+        normalized_vector = _normalize_score_map(vector_scores, candidate_ids)
+        normalized_reranker = _normalize_score_map(reranker_scores or {}, candidate_ids)
+        weights = _normalize_weights(
+            {
+                "bm25": settings.hybrid_bm25_weight if bm25_scores else 0.0,
+                "vector": settings.hybrid_vector_weight if vector_scores else 0.0,
+                "reranker": (
+                    settings.hybrid_reranker_weight if reranker_scores else 0.0
+                ),
+            }
+        )
+        return {
+            cid: (
+                weights["bm25"] * normalized_bm25[cid]
+                + weights["vector"] * normalized_vector[cid]
+                + weights["reranker"] * normalized_reranker[cid]
+            )
+            for cid in candidate_ids
+        }
+
     def _fallback_answer(
         self,
         query: str,
@@ -121,6 +190,16 @@ class IntelligentQA:
             f"我先给结论：请优先参考下面这些可追溯证据。\n"
             f"证据：\n{evidence}"
         )
+
+    def _record_trace(self, payload: dict) -> None:
+        self._last_trace = dict(payload)
+        try:
+            self._get_audit_logger().log(payload)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[audit-warning] {exc}")
+
+    def get_last_trace(self) -> dict | None:
+        return self._last_trace
 
     @staticmethod
     def _llm_parse_failure_answer() -> str:
@@ -208,70 +287,91 @@ class IntelligentQA:
         doc_id_prefixes: list[str] | None,
     ) -> list[SourceItem]:
         metadata_repository, vector_repository = self._get_repositories()
-        chunks = metadata_repository.list_chunks()
-        if doc_id_prefixes:
-            prefixes = [p.strip() for p in doc_id_prefixes if p and p.strip()]
-            if prefixes:
-                chunks = [
-                    chunk
-                    for chunk in chunks
-                    if any(chunk.document_id.startswith(prefix) for prefix in prefixes)
-                ]
+        chunks = self._filter_chunks(
+            metadata_repository.list_chunks(),
+            doc_id_prefixes=doc_id_prefixes,
+        )
         if not chunks:
             return []
 
         chunk_map = {chunk.chunk_id: chunk for chunk in chunks}
-        vector_hits = vector_repository.query(text=query, top_k=max(top_k * 4, 20))
-        if doc_id_prefixes:
-            prefixes = [p.strip() for p in doc_id_prefixes if p and p.strip()]
-            if prefixes:
-                vector_hits = [
-                    hit
-                    for hit in vector_hits
-                    if any(
-                        (chunk_map.get(hit.chunk_id) and chunk_map[hit.chunk_id].document_id.startswith(prefix))
-                        for prefix in prefixes
-                    )
-                ]
+        bm25_hits: list[tuple[str, float]] = []
+        if settings.hybrid_bm25_enabled:
+            bm25_hits = self._get_bm25_retriever().query(
+                query=query,
+                chunks=chunks,
+                top_k=max(top_k, settings.hybrid_bm25_top_k),
+            )
+
+        vector_hits = []
+        if settings.hybrid_vector_enabled:
+            vector_hits = [
+                hit
+                for hit in vector_repository.query(
+                    text=query,
+                    top_k=max(top_k, settings.hybrid_vector_top_k),
+                )
+                if hit.chunk_id in chunk_map
+            ]
+
+        bm25_score_map = {chunk_id: score for chunk_id, score in bm25_hits}
         vector_score_map = {hit.chunk_id: hit.score for hit in vector_hits}
+        ordered_candidate_ids = list(
+            dict.fromkeys(
+                [chunk_id for chunk_id, _ in bm25_hits]
+                + [hit.chunk_id for hit in vector_hits]
+            )
+        )
 
-        scored = []
-        candidate_ids = {hit.chunk_id for hit in vector_hits}
-        for chunk in chunks:
-            if candidate_ids and chunk.chunk_id not in candidate_ids:
-                continue
-            base_vector_score = vector_score_map.get(chunk.chunk_id, 0.0)
-            metadata = _parse_metadata(chunk.metadata_json)
-            score = _hybrid_score(query, chunk.content, base_vector_score, metadata)
-            if score > 0:
-                scored.append((score, chunk.chunk_id))
+        if not ordered_candidate_ids:
+            ordered_candidate_ids = [chunk.chunk_id for chunk in chunks[: max(1, top_k)]]
 
-        if not scored:
-            for hit in vector_hits[:top_k]:
-                scored.append((hit.score * 0.5, hit.chunk_id))
+        pre_rerank_scores = self._compose_scores(
+            candidate_ids=ordered_candidate_ids,
+            bm25_scores=bm25_score_map,
+            vector_scores=vector_score_map,
+        )
+        candidate_pool_size = max(top_k, settings.hybrid_candidate_pool_size)
+        candidate_ids = sorted(
+            ordered_candidate_ids,
+            key=lambda cid: (
+                pre_rerank_scores.get(cid, 0.0),
+                bm25_score_map.get(cid, 0.0),
+                vector_score_map.get(cid, 0.0),
+            ),
+            reverse=True,
+        )[:candidate_pool_size]
 
-        if not scored:
-            for chunk in chunks[:top_k]:
-                scored.append((0.0001, chunk.chunk_id))
+        reranker_score_map: dict[str, float] = {}
+        if settings.hybrid_reranker_enabled and candidate_ids:
+            reranker_score_map = self._get_reranker().score(
+                query=query,
+                chunks=[chunk_map[cid] for cid in candidate_ids],
+            )
 
-        scored.sort(key=lambda x: x[0], reverse=True)
-        hits = []
-        used: set[str] = set()
-        for score, chunk_id in scored:
-            if chunk_id in used:
-                continue
-            hits.append((score, chunk_id))
-            used.add(chunk_id)
-            if len(hits) >= top_k:
-                break
+        final_scores = self._compose_scores(
+            candidate_ids=candidate_ids,
+            bm25_scores=bm25_score_map,
+            vector_scores=vector_score_map,
+            reranker_scores=reranker_score_map,
+        )
+        ranked_chunk_ids = sorted(
+            candidate_ids,
+            key=lambda cid: (
+                final_scores.get(cid, 0.0),
+                reranker_score_map.get(cid, float("-inf")),
+                pre_rerank_scores.get(cid, 0.0),
+            ),
+            reverse=True,
+        )[:top_k]
         return [
             SourceItem(
                 chunk_id=chunk_map[chunk_id].chunk_id,
                 document_id=chunk_map[chunk_id].document_id,
                 content=chunk_map[chunk_id].content,
-                score=round(score, 4),
+                score=round(final_scores.get(chunk_id, 0.0), 4),
             )
-            for score, chunk_id in hits
+            for chunk_id in ranked_chunk_ids
         ]
 
     def ask(
@@ -283,15 +383,78 @@ class IntelligentQA:
         doc_id_prefixes: list[str] | None = None,
     ) -> tuple[str, list[SourceItem]]:
         k = top_k or settings.top_k
-        hits = self._retrieve(query=query, top_k=k, doc_id_prefixes=doc_id_prefixes)
         memory_service = self._get_memory_service()
-        prefs = memory_service.list_preferences(user_id)
+        input_guard_result = (
+            self._get_input_guard().assess(query)
+            if settings.input_guard_enabled
+            else None
+        )
+        sanitized_query = (
+            input_guard_result.sanitized_query
+            if input_guard_result
+            else str(query or "").strip()
+        )
+        access_decision = self._get_access_controller().resolve(
+            user_id=user_id,
+            requested_prefixes=doc_id_prefixes,
+        )
+        trace = {
+            "user_id": user_id,
+            "session_id": session_id,
+            "query": sanitized_query,
+            "risk_level": input_guard_result.risk_level if input_guard_result else "low",
+            "input_guard_labels": input_guard_result.labels if input_guard_result else [],
+            "requested_doc_prefixes": doc_id_prefixes or [],
+            "effective_doc_prefixes": access_decision.effective_prefixes or [],
+            "access_reason": access_decision.reason,
+            "blocked": False,
+            "degraded": False,
+            "mode": "normal",
+            "retrieved_chunk_ids": [],
+            "output_guard_labels": [],
+        }
 
-        memory_service.append_session(session_id, f"user: {query}")
+        memory_service.append_session(session_id, f"user: {sanitized_query}")
+
+        if input_guard_result and not input_guard_result.allowed:
+            answer = input_guard_result.response_text or "这个请求不符合安全要求，奶龙先拒绝处理。"
+            memory_service.append_session(session_id, f"assistant: {answer}")
+            trace.update(
+                {
+                    "blocked": True,
+                    "mode": "blocked_by_input_guard",
+                    "answer": answer,
+                }
+            )
+            self._record_trace(trace)
+            return answer, []
+
+        if not access_decision.allowed:
+            answer = "你当前没有访问这批文档的权限，先补充授权范围或切换到有权限的资料。"
+            memory_service.append_session(session_id, f"assistant: {answer}")
+            trace.update(
+                {
+                    "blocked": True,
+                    "mode": "blocked_by_access_control",
+                    "answer": answer,
+                }
+            )
+            self._record_trace(trace)
+            return answer, []
+
+        hits = self._retrieve(
+            query=sanitized_query,
+            top_k=k,
+            doc_id_prefixes=access_decision.effective_prefixes,
+        )
+        trace["retrieved_chunk_ids"] = [item.chunk_id for item in hits]
+        prefs = memory_service.list_preferences(user_id)
 
         if not hits:
             answer = "奶龙在呢，但我还没找到可引用证据。先导入文档，我们再一起看。"
             memory_service.append_session(session_id, f"assistant: {answer}")
+            trace["answer"] = answer
+            self._record_trace(trace)
             return answer, []
 
         answer = None
@@ -300,12 +463,27 @@ class IntelligentQA:
             and bool(settings.llm_api_base)
             and bool(settings.llm_api_key)
         )
-        if llm_requested:
+        risk_level = input_guard_result.risk_level if input_guard_result else "low"
+        if risk_level == "high" and not settings.high_risk_allow_llm:
+            trace["degraded"] = True
+            trace["mode"] = "high_risk_grounded_only"
+            answer = build_grounded_safe_answer(
+                query=sanitized_query,
+                hits=hits,
+                reason="high_risk_degraded",
+            )
+        elif llm_requested:
             try:
-                messages = self._build_prompt_messages(query=query, hits=hits, prefs=prefs)
+                messages = self._build_prompt_messages(
+                    query=sanitized_query,
+                    hits=hits,
+                    prefs=prefs,
+                )
                 answer = self._get_llm_client().generate(
                     messages=messages,
-                    temperature=settings.llm_temperature,
+                    temperature=min(settings.llm_temperature, 0.1)
+                    if risk_level == "medium"
+                    else settings.llm_temperature,
                     max_tokens=settings.llm_max_tokens,
                 )
                 answer = self._parse_llm_answer(answer)
@@ -316,7 +494,26 @@ class IntelligentQA:
             if llm_requested:
                 answer = self._llm_parse_failure_answer()
             else:
-                answer = self._fallback_answer(query=query, hits=hits, prefs=prefs)
+                answer = self._fallback_answer(
+                    query=sanitized_query,
+                    hits=hits,
+                    prefs=prefs,
+                )
+
+        if settings.output_guard_enabled:
+            output_guard_result = self._get_output_guard().validate(
+                query=sanitized_query,
+                answer=answer,
+                hits=hits,
+                risk_level=risk_level,
+            )
+            answer = output_guard_result.final_answer
+            if not output_guard_result.passed:
+                trace["degraded"] = True
+                trace["mode"] = output_guard_result.reason or "output_guard_degraded"
+            trace["output_guard_labels"] = output_guard_result.labels
 
         memory_service.append_session(session_id, f"assistant: {answer}")
+        trace["answer"] = answer
+        self._record_trace(trace)
         return answer, hits

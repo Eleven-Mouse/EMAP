@@ -10,6 +10,10 @@ class EvalSample:
     reference_answer: str | None = None
     reference_contexts: list[str] | None = None
     expected_chunk_ids: list[str] | None = None
+    expected_refusal: bool | None = None
+    required_citations: bool | None = None
+    forbidden_chunk_ids: list[str] | None = None
+    allowed_doc_prefixes: list[str] | None = None
 
 
 def _to_list_of_str(value) -> list[str]:
@@ -47,6 +51,22 @@ def _parse_row(row: dict, row_index: int) -> EvalSample:
         or row.get("relevant_chunk_ids")
         or row.get("chunk_ids")
     )
+    expected_refusal = row.get("expected_refusal")
+    if expected_refusal is not None:
+        expected_refusal = bool(expected_refusal)
+
+    required_citations = row.get("required_citations")
+    if required_citations is not None:
+        required_citations = bool(required_citations)
+
+    forbidden_chunk_ids = _to_list_of_str(
+        row.get("forbidden_chunk_ids")
+        or row.get("blocked_chunk_ids")
+    )
+    allowed_doc_prefixes = _to_list_of_str(
+        row.get("allowed_doc_prefixes")
+        or row.get("doc_prefixes")
+    )
 
     return EvalSample(
         sample_id=sample_id,
@@ -54,6 +74,10 @@ def _parse_row(row: dict, row_index: int) -> EvalSample:
         reference_answer=reference_answer,
         reference_contexts=reference_contexts,
         expected_chunk_ids=expected_chunk_ids,
+        expected_refusal=expected_refusal,
+        required_citations=required_citations,
+        forbidden_chunk_ids=forbidden_chunk_ids,
+        allowed_doc_prefixes=allowed_doc_prefixes,
     )
 
 

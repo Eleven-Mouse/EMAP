@@ -47,6 +47,12 @@ def _to_bool(value: str, default: bool) -> bool:
     return default
 
 
+def _to_str(value: str | None, default: str) -> str:
+    if value is None:
+        return default
+    return str(value)
+
+
 class Settings:
     def __init__(self) -> None:
         self.app_name = os.getenv("APP_NAME", "Eleven Memory Agent Platform")
@@ -61,6 +67,90 @@ class Settings:
         self.embedding_device = os.getenv("EMBEDDING_DEVICE", "cpu")
         self.embedding_cache_dir = os.getenv(
             "EMBEDDING_CACHE_DIR", f"{self.rag_store_dir}/models"
+        )
+        self.hybrid_bm25_enabled = _to_bool(
+            os.getenv("HYBRID_BM25_ENABLED", "true"),
+            True,
+        )
+        self.hybrid_vector_enabled = _to_bool(
+            os.getenv("HYBRID_VECTOR_ENABLED", "true"),
+            True,
+        )
+        self.hybrid_reranker_enabled = _to_bool(
+            os.getenv("HYBRID_RERANKER_ENABLED", "true"),
+            True,
+        )
+        self.hybrid_bm25_top_k = _to_int(os.getenv("HYBRID_BM25_TOP_K", "30"), 30)
+        self.hybrid_vector_top_k = _to_int(
+            os.getenv("HYBRID_VECTOR_TOP_K", "30"),
+            30,
+        )
+        self.hybrid_candidate_pool_size = _to_int(
+            os.getenv("HYBRID_CANDIDATE_POOL_SIZE", "40"),
+            40,
+        )
+        self.hybrid_bm25_weight = _to_float(
+            os.getenv("HYBRID_BM25_WEIGHT", "0.35"),
+            0.35,
+        )
+        self.hybrid_vector_weight = _to_float(
+            os.getenv("HYBRID_VECTOR_WEIGHT", "0.25"),
+            0.25,
+        )
+        self.hybrid_reranker_weight = _to_float(
+            os.getenv("HYBRID_RERANKER_WEIGHT", "0.40"),
+            0.40,
+        )
+        self.bm25_k1 = _to_float(os.getenv("BM25_K1", "1.5"), 1.5)
+        self.bm25_b = _to_float(os.getenv("BM25_B", "0.75"), 0.75)
+        self.reranker_model_name = os.getenv(
+            "RERANKER_MODEL_NAME",
+            "BAAI/bge-reranker-v2-m3",
+        )
+        self.reranker_device = os.getenv("RERANKER_DEVICE", self.embedding_device)
+        self.reranker_cache_dir = os.getenv(
+            "RERANKER_CACHE_DIR",
+            self.embedding_cache_dir,
+        )
+        self.reranker_batch_size = _to_int(
+            os.getenv("RERANKER_BATCH_SIZE", "8"),
+            8,
+        )
+        self.reranker_local_files_only = _to_bool(
+            os.getenv("RERANKER_LOCAL_FILES_ONLY", "false"),
+            False,
+        )
+        self.input_guard_enabled = _to_bool(
+            os.getenv("INPUT_GUARD_ENABLED", "true"),
+            True,
+        )
+        self.output_guard_enabled = _to_bool(
+            os.getenv("OUTPUT_GUARD_ENABLED", "true"),
+            True,
+        )
+        self.high_risk_allow_llm = _to_bool(
+            os.getenv("HIGH_RISK_ALLOW_LLM", "false"),
+            False,
+        )
+        self.authz_enabled = _to_bool(
+            os.getenv("AUTHZ_ENABLED", "true"),
+            True,
+        )
+        self.authz_default_allow = _to_bool(
+            os.getenv("AUTHZ_DEFAULT_ALLOW", "true"),
+            True,
+        )
+        self.user_doc_permissions = _to_str(
+            os.getenv("USER_DOC_PERMISSIONS"),
+            "",
+        )
+        self.audit_log_enabled = _to_bool(
+            os.getenv("AUDIT_LOG_ENABLED", "true"),
+            True,
+        )
+        self.audit_log_path = os.getenv(
+            "AUDIT_LOG_PATH",
+            f"{self.rag_store_dir}/audit/agent_audit.jsonl",
         )
         self.llm_enabled = _to_bool(os.getenv("LLM_ENABLED", "false"), False)
         self.llm_api_base = os.getenv("LLM_API_BASE", "").rstrip("/")

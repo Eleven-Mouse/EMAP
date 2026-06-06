@@ -8,6 +8,7 @@ class ChatRequest(BaseModel):
     session_id: str = Field(..., min_length=1)
     query: str = Field(..., min_length=1)
     top_k: int | None = None
+    doc_id_prefixes: list[str] | None = None
 
 
 class ChatResponse(BaseModel):

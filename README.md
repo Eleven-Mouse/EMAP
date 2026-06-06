@@ -5,7 +5,7 @@
 - `uv` 作为项目管理与运行工具
 - FastAPI API 可直接启动联调
 - `eleven-agent-platform` 是唯一后端主入口
-- 检索链路包含“关键词 + 向量式相似度 + 重排（MVP简化版）”
+- 检索链路包含“BM25 + FAISS + CrossEncoder reranker”混合召回与重排
 - 回答返回来源引用
 - 当前已支持 MySQL 元数据、Redis 短时会话、FAISS 本地向量索引
 
@@ -132,6 +132,21 @@ LLM_TIMEOUT_SECONDS=60
 
 - `LLM_ENABLED=false` 时，`/v1/chat` 走模板化兜底回答。
 - `LLM_ENABLED=true` 且 `LLM_API_BASE/API_KEY` 有效时，`/v1/chat` 会将检索片段注入 prompt 后调用 LLM 生成答案，同时继续返回 `sources[]` 供追溯。
+- 检索默认启用 `BM25 + FAISS + reranker`；若需要调优召回/重排权重，可在 `.env` 中配置：
+
+```env
+HYBRID_BM25_WEIGHT=0.35
+HYBRID_VECTOR_WEIGHT=0.25
+HYBRID_RERANKER_WEIGHT=0.40
+HYBRID_BM25_TOP_K=30
+HYBRID_VECTOR_TOP_K=30
+HYBRID_CANDIDATE_POOL_SIZE=40
+BM25_K1=1.5
+BM25_B=0.75
+RERANKER_MODEL_NAME=BAAI/bge-reranker-v2-m3
+RERANKER_DEVICE=cpu
+RERANKER_BATCH_SIZE=8
+```
 
 4. 奶龙命令行提问（默认直接提问）：
 
@@ -238,7 +253,7 @@ uv run --python 3.12 python eleven-agent-platform/nailong_ingest.py docs/intro.m
 ## 4. 最小数据流
 
 1. `ingest`：输入文档 -> 切片 -> 写入 MySQL 元数据 -> 向量入本地索引文件。
-2. `retrieve`：关键词打分 + 向量相似度 + token 向量 fallback -> 混合分数重排 -> 返回 topK。
+2. `retrieve`：BM25 召回 + FAISS 召回 -> 候选集合并 -> CrossEncoder reranker 重排 -> 按配置权重融合返回 topK。
 3. `chat`：先检索证据 -> 结合用户偏好生成回答 -> 返回引用片段。
 4. `memory`：偏好记忆写入 MySQL，会话短时状态写入 Redis，并在健康检查中暴露连接池与操作指标。
 
@@ -256,8 +271,8 @@ uv run --python 3.12 python eleven-agent-platform/nailong_ingest.py docs/intro.m
   - 当前：MySQL 存长期偏好，Redis 存短时会话，并记录基础操作指标。
   - 后续：补充多租户隔离、权限校验、删除追踪和缓存一致性治理。
 - `services/retrieval_service.py`
-  - 当前：FAISS 召回 + 关键词/token/metadata 简化重排。
-  - 后续：接入 BM25/全文索引、真实 reranker 和离线评估闭环。
+  - 当前：BM25 + FAISS 双路召回，CrossEncoder reranker 重排，候选池和融合权重可配置。
+  - 后续：接入更大规模全文索引、独立检索服务和离线评估闭环。
 - `services/chat_service.py`
   - 当前：支持 OpenAI 兼容 LLM 调用；未启用 LLM 时走模板化兜底回答，仍返回 `sources[]`。
   - 后续：补充 LLM 调用重试、超时降级、响应格式修复和引用完整性校验。
@@ -377,5 +392,4 @@ uv run --python 3.12 python scripts/evaluate_rag.py \
 
 - 本仓库主编排仍保持 `LangChain`。
 - `LlamaIndex` 当前作为可选评估生态依赖引入，不改动现有业务链路。
-
 

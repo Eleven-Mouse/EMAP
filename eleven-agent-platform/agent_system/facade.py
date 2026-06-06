@@ -109,6 +109,9 @@ class AgentSystem:
             doc_id_prefixes=doc_id_prefixes,
         )
 
+    def get_last_trace(self) -> dict | None:
+        return self._get_qa().get_last_trace()
+
     def upsert_preference(self, user_id: str, key: str, value: str) -> None:
         self._get_memory_service().upsert_preference(user_id, key, value)
 
