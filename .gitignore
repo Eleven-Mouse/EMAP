@@ -1,0 +1,19 @@
+# Python runtime artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+
+# Local configuration and generated runtime data
+.env
+.rag_store/
+.run/
+tmp_meta.db
+*.log
+
+# IDE metadata
+.idea/

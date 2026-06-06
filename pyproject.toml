@@ -32,3 +32,9 @@ eval = [
 
 [tool.uv]
 package = false
+
+[tool.pytest.ini_options]
+addopts = "-p no:cacheprovider"
+testpaths = [
+  "eleven-agent-platform/tests",
+]
