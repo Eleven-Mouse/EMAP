@@ -1,4 +1,4 @@
-class QdrantVectorStore:
+class FaissVectorStore:
     def __init__(self) -> None:
         self._vector_repository = None
 

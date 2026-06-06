@@ -14,6 +14,7 @@ def chat(payload: ChatRequest) -> ChatResponse:
         session_id=payload.session_id,
         query=payload.query,
         top_k=payload.top_k,
+        doc_id_prefixes=payload.doc_id_prefixes,
     )
     return ChatResponse(answer=answer, sources=sources)
 

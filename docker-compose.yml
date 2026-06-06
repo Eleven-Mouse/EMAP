@@ -1,0 +1,71 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: emap-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: eleven_rag
+      MYSQL_ROOT_PASSWORD: password
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "3306:3306"
+    volumes:
+      - emap_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-ppassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: emap-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - emap_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: emap-api
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      APP_ENV: docker
+      MYSQL_DSN: mysql+pymysql://root:password@mysql:3306/eleven_rag?charset=utf8mb4
+      REDIS_URL: redis://redis:6379/0
+      RAG_STORE_DIR: /app/.rag_store
+      EMBEDDING_CACHE_DIR: /app/.rag_store/models
+      RERANKER_CACHE_DIR: /app/.rag_store/models
+    ports:
+      - "8000:8000"
+    volumes:
+      - emap_rag_store:/app/.rag_store
+      - emap_run_logs:/app/.run
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  emap_mysql_data:
+  emap_redis_data:
+  emap_rag_store:
+  emap_run_logs:

@@ -1,0 +1,13 @@
+.git
+.github
+.idea
+.pytest_cache
+.rag_store
+.run
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.log
+.env
+tmp_meta.db

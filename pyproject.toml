@@ -38,3 +38,6 @@ addopts = "-p no:cacheprovider"
 testpaths = [
   "eleven-agent-platform/tests",
 ]
+markers = [
+  "integration: requires live MySQL/Redis plus explicit EMAP_RUN_INTEGRATION_TESTS=1",
+]

@@ -56,8 +56,8 @@ def test_retrieval_service_delegates_qa():
 
 def test_chat_service_delegates_qa():
     class FakeQA:
-        def ask(self, user_id, session_id, query, top_k):
-            return ("ok", [{"user_id": user_id, "session_id": session_id, "query": query, "top_k": top_k}])
+        def ask(self, user_id, session_id, query, top_k, doc_id_prefixes=None):
+            return ("ok", [{"user_id": user_id, "session_id": session_id, "query": query, "top_k": top_k, "doc_id_prefixes": doc_id_prefixes}])
 
     svc = ChatService()
     svc._qa = FakeQA()

@@ -1,70 +1,193 @@
 # Eleven Memory Agent Platform (EMAP)
 
-最小可运行的记忆增强 Agent 后端骨架（内置 RAG 能力），满足：
+EMAP 是一个可运行的记忆增强 Agent 后端 MVP，内置 RAG 主链路，当前重点解决四件事：
 
-- `uv` 作为项目管理与运行工具
-- FastAPI API 可直接启动联调
-- `eleven-agent-platform` 是唯一后端主入口
-- 检索链路包含“关键词 + 向量式相似度 + 重排（MVP简化版）”
-- 回答返回来源引用
-- 当前已支持 MySQL 元数据、Redis 短时会话、FAISS 本地向量索引
+- 文档导入与切片
+- `BM25 + FAISS + CrossEncoder reranker` 混合检索
+- 带引用问答与基础安全降级
+- MySQL / Redis / FAISS 分层存储与最小评测闭环
 
-## 1. 目录结构
+一句话定位：**这不是“只会调 LLM API”的 Demo，而是一个已经跑通导入、检索、问答、记忆、评测、测试的 AI 后端骨架。**
+
+## 当前状态
+
+当前仓库是 **高质量 MVP / 工程化骨架**，不是生产终态。
+
+已经落地：
+
+- FastAPI 后端入口与 REST API
+- 文档导入、切片、重建索引
+- `BM25 + FAISS + reranker` 混合检索
+- 带来源引用的问答输出
+- 偏好记忆（MySQL）与短时会话（Redis）
+- 输入审查、输出引用校验、权限前缀过滤、审计日志
+- 离线评测脚本与基础质量门禁
+- 单元测试、E2E 测试、可选真实依赖集成测试
+
+暂未完成或仍偏 MVP：
+
+- 真实独立向量库适配
+- 更完整的知识记忆编辑 / 删除 / 追溯闭环
+- 真实生产级日志、监控、限流、降级体系
+- CI 中自动跑真实依赖集成测试
+
+## 技术栈
+
+- Python 3.12 / 3.13
+- FastAPI
+- LangChain
+- MySQL
+- Redis
+- FAISS
+- sentence-transformers
+- uv
+
+## 仓库结构
 
 ```text
-Eleven Memory Agent Platform/
+Eleven-RAG/
 ├─ AGENTS.md
 ├─ BACKEND_GUIDE.md
-├─ 需求分析.md
-├─ .env.example
-├─ pyproject.toml
 ├─ README.md
+├─ pyproject.toml
+├─ .env.example
 ├─ scripts/
 │  ├─ start.ps1
-│  ├─ evaluate_rag.py
+│  ├─ manage_memory_schema.py
 │  ├─ rebuild_faiss_index.py
-│  └─ manage_memory_schema.py
+│  ├─ evaluate_rag.py
+│  └─ prepare_eval_corpus.py
 ├─ eval/
 │  ├─ sample_dataset.jsonl
 │  └─ e2e_dataset.jsonl
 └─ eleven-agent-platform/
    ├─ main.py
-   ├─ core/
-   │  └─ config.py
    ├─ agent_system/
-   │  └─ facade.py
+   ├─ audit/
+   ├─ authz/
    ├─ controllers/
-   │  ├─ health_controller.py
-   │  ├─ ingestion_controller.py
-   │  ├─ retrieval_controller.py
-   │  ├─ chat_controller.py
-   │  └─ memory_controller.py
-   ├─ services/
-   │  ├─ container.py
-   │  ├─ ingestion_service.py
-   │  ├─ retrieval_service.py
-   │  ├─ chat_service.py
-   │  ├─ memory_service.py
-   │  ├─ mysql_pool.py
-   │  └─ llm_client.py
+   ├─ core/
+   ├─ document_processing/
+   ├─ embedding/
+   ├─ evaluation/
+   ├─ guards/
+   ├─ qa/
    ├─ repositories/
-   │  ├─ metadata_repository.py
-   │  ├─ vector_repository.py
-   │  ├─ document_repository.py
-   │  └─ memory_repository.py
-   └─ schemas/
-      ├─ common.py
-      ├─ ingestion.py
-      ├─ retrieval.py
-      ├─ chat.py
-      └─ memory.py
+   ├─ schemas/
+   ├─ services/
+   ├─ tests/
+   └─ vector_storage/
 ```
 
-仓库已收敛为单主入口：旧版 `eleven-rag` 目录已删除，启动、脚本、测试和文档均以 `eleven-agent-platform` 为准。
+说明：
 
-## 2. 启动方式（uv）
+- `eleven-agent-platform` 是唯一后端主入口
+- `qa/answering.py` 负责问答主编排，内部已拆成检索编排和回答生成协作对象
+- `vector_storage/FaissVectorStore` 是当前实际向量存储适配层
+- `tests/` 同时包含单测、E2E 和可选集成测试
 
-### 2.0 一键启动（PowerShell，推荐）
+## 核心能力
+
+### 1. 文档导入
+
+- 支持文本直接导入
+- 支持本地 `.md / .txt / .pdf` 文件导入
+- 支持 `recursive / markdown / sentence` 三种切片策略
+- 重复导入同一 `document_id` 时会替换旧 chunk 并同步重建索引
+
+### 2. 混合检索
+
+当前检索链路：
+
+1. BM25 关键词召回
+2. FAISS 向量召回
+3. CrossEncoder reranker 重排
+4. 按配置权重融合返回 topK
+
+当前实现是“真实混合检索”，不是 README 里喊口号。
+
+### 3. 带引用问答
+
+- `chat` 先检索证据，再生成答案
+- 关键结论要求携带 `chunk_id` 引用
+- LLM 不可用时走模板化兜底回答
+- 引用不合法时会被输出校验降级成“证据式回答”
+
+### 4. 记忆与权限
+
+- 偏好记忆落 MySQL
+- 短时会话落 Redis
+- 支持 `USER_DOC_PERMISSIONS` 前缀级权限过滤
+- 支持输入审查、输出校验、审计日志
+
+### 5. 评测与测试
+
+- 支持离线 RAG 指标评估
+- 有单元测试与流程测试
+- 有可选真实依赖集成测试
+
+## 快速开始
+
+### 1. 安装依赖
+
+推荐 Python `3.12`。
+
+```bash
+uv sync --python 3.12
+```
+
+如需评测依赖：
+
+```bash
+uv sync --python 3.12 --group eval
+```
+
+### 2. 配置环境变量
+
+复制 `.env.example` 为 `.env`，至少确认这些字段：
+
+```env
+MYSQL_DSN=mysql+pymysql://root:password@127.0.0.1:3306/eleven_rag?charset=utf8mb4
+REDIS_URL=redis://127.0.0.1:6379/0
+EMBEDDING_MODEL_NAME=BAAI/bge-m3
+RERANKER_MODEL_NAME=BAAI/bge-reranker-v2-m3
+```
+
+如果要启用真实 LLM：
+
+```env
+LLM_ENABLED=true
+LLM_API_BASE=你的网关地址
+LLM_API_KEY=你的密钥
+LLM_MODEL=mimo-pro
+LLM_TEMPERATURE=0.2
+LLM_MAX_TOKENS=1024
+LLM_TIMEOUT_SECONDS=60
+```
+
+### 3. 初始化 memory schema
+
+查看迁移状态：
+
+```bash
+uv run --python 3.12 python scripts/manage_memory_schema.py --action status
+```
+
+预演执行：
+
+```bash
+uv run --python 3.12 python scripts/manage_memory_schema.py --action apply --dry-run
+```
+
+执行迁移：
+
+```bash
+uv run --python 3.12 python scripts/manage_memory_schema.py --action apply
+```
+
+### 4. 启动服务
+
+PowerShell 一键启动：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1
@@ -73,79 +196,113 @@ powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1
 默认会自动执行：
 
 1. `uv sync --python 3.12`
-2. MySQL/Redis 连通性检查
-3. `memory` 初始化脚本（`scripts/manage_memory_schema.py --action apply`）
-4. 启动 FastAPI API（用于后续接入 QQ 机器人）
+2. MySQL / Redis 连通性检查
+3. memory schema 应用
+4. 启动 FastAPI
 
-可选参数：
+常用参数：
 
-- `-SkipSync`：跳过依赖同步
-- `-SkipInfraCheck`：跳过 MySQL/Redis 检查
-- `-SkipMemorySchema`：跳过 memory schema 应用
-- `-NoReload`：关闭 `uvicorn --reload`
-- `-Port 9000`：指定端口
-- `-PythonVersion 3.12`：指定 Python 版本
+- `-SkipSync`
+- `-SkipInfraCheck`
+- `-SkipMemorySchema`
+- `-NoReload`
+- `-Port 9000`
+- `-PythonVersion 3.12`
 
-1. 同步依赖（推荐 Python 3.12 或 3.13）：
-
-```bash
-uv sync --python 3.12
-```
-
-2. 启动服务：
+手动启动：
 
 ```bash
 uv run --python 3.12 uvicorn main:app --app-dir eleven-agent-platform --reload --port 8000
 ```
 
-首次启动会预热 `BAAI/bge-m3` 并缓存到 `.rag_store/models`。
+首次启动会预热 embedding 模型并缓存到 `.rag_store/models`。
 
-手动预热：
-
-```bash
-uv run --python 3.12 python scripts/warmup_embedding.py
-```
-
-3. 健康检查：
+### 5. 健康检查
 
 ```bash
 curl http://127.0.0.1:8000/health
 ```
 
-`/health` 结果会包含 `memory` 快照（MySQL/Redis 连接池状态 + memory 操作指标）。
+`/health` 会返回：
 
-启用真实 LLM（MiMo Pro / OpenAI 兼容接口）：
+- 服务状态
+- MySQL 连接池快照
+- Redis 连接池快照
+- memory 操作指标
 
-在 `.env` 中配置：
+### 6. Docker Compose 启动
 
-```env
-LLM_ENABLED=true
-LLM_API_BASE=你的网关基础地址
-LLM_API_KEY=你的密钥
-LLM_MODEL=mimo-pro
-LLM_TEMPERATURE=0.2
-LLM_MAX_TOKENS=1024
-LLM_TIMEOUT_SECONDS=60
+仓库现在已经提供一套**最小可运行**的容器化方案，会拉起：
+
+- `api`
+- `mysql`
+- `redis`
+
+启动前准备：
+
+1. 复制 `.env.example` 为 `.env`
+2. 如需启用真实 LLM，填好 `LLM_*` 配置
+3. 如不启用 LLM，保持 `LLM_ENABLED=false` 即可
+
+启动命令：
+
+```bash
+docker compose up --build
+```
+
+后台启动：
+
+```bash
+docker compose up --build -d
+```
+
+查看服务状态：
+
+```bash
+docker compose ps
+```
+
+查看 API 日志：
+
+```bash
+docker compose logs -f api
+```
+
+停止并清理容器：
+
+```bash
+docker compose down
 ```
 
 说明：
 
-- `LLM_ENABLED=false` 时，`/v1/chat` 走模板化兜底回答。
-- `LLM_ENABLED=true` 且 `LLM_API_BASE/API_KEY` 有效时，`/v1/chat` 会将检索片段注入 prompt 后调用 LLM 生成答案，同时继续返回 `sources[]` 供追溯。
+- 容器内会自动等待 MySQL / Redis 就绪
+- 容器内会自动执行 `memory schema` 迁移
+- API 默认暴露在 `http://127.0.0.1:8000`
+- MySQL 暴露在本机 `3306`
+- Redis 暴露在本机 `6379`
 
-4. 奶龙命令行提问（默认直接提问）：
+当前已知限制：
+
+- 首次启动可能较慢，因为需要下载 embedding / reranker 模型
+- `.pdf` 解析依赖 `unstructured` 路线，容器内已补最小系统依赖，但复杂 PDF 仍可能需要额外调试
+- 这套 Compose 目标是“本地快速复现”，不是生产部署模板
+
+## 常用命令
+
+### CLI 提问
 
 ```bash
 uv run --python 3.12 python eleven-agent-platform/nailong_cli.py "什么是RAG？"
 ```
 
-如需强制触发词模式：
+强制触发词模式：
 
 ```bash
 uv run --python 3.12 python eleven-agent-platform/nailong_cli.py --require-trigger "奶龙 什么是RAG？"
 ```
 
-5. 奶龙本地文件导入（.md/.txt/.pdf）：
+### 本地文件导入
 
 ```bash
 uv run --python 3.12 python eleven-agent-platform/nailong_ingest.py docs/intro.md
@@ -160,19 +317,40 @@ uv run --python 3.12 python eleven-agent-platform/nailong_ingest.py docs/intro.m
 - `--chunk-size 500`
 - `--chunk-overlap 100`
 
-## 2.1 关键概念（Embedding / bge-m3 / FAISS）
+### 重建 FAISS 索引
 
-- Embedding：把文本（query、chunk）转换为语义向量，用于相似度检索。
-- `BAAI/bge-m3`：本项目当前默认的 embedding 模型，负责文本向量化。
-- FAISS：向量检索库，负责存储向量并执行近邻搜索，返回最相似的候选 chunk。
-- 在本项目中的关系：`bge-m3` 负责“文本 -> 向量”，FAISS 负责“向量 -> TopK 相似片段”。
+```bash
+uv run --python 3.12 python scripts/rebuild_faiss_index.py
+```
 
-## 3. 核心接口
+### 准备评测语料
 
-### 3.1 文档导入
+```bash
+uv run --python 3.12 python scripts/prepare_eval_corpus.py
+```
 
-- `POST /v1/ingest`
-- 请求体：
+### 执行离线评测
+
+```bash
+uv run --python 3.12 python scripts/evaluate_rag.py --dataset eval/sample_dataset.jsonl
+```
+
+带约束门禁示例：
+
+```bash
+uv run --python 3.12 python scripts/evaluate_rag.py \
+  --dataset eval/sample_dataset.jsonl \
+  --min-retrieval-hit-rate 0.8 \
+  --min-context-precision 0.7 \
+  --min-context-recall 0.7 \
+  --min-citation-coverage 0.6
+```
+
+## API 概览
+
+### `POST /v1/ingest`
+
+请求体：
 
 ```json
 {
@@ -185,13 +363,7 @@ uv run --python 3.12 python eleven-agent-platform/nailong_ingest.py docs/intro.m
 }
 ```
 
-- 分片策略（可选）：
-  - `recursive`：默认通用策略，兼顾中英文和自然段
-  - `markdown`：优先按 Markdown 标题与段落边界切分
-  - `sentence`：优先按句边界切分（中英文句号/问号/感叹号）
-- `chunk_size/chunk_overlap` 可按请求覆盖全局默认配置，且 `chunk_overlap < chunk_size`。
-
-- 返回：
+返回：
 
 ```json
 {
@@ -200,10 +372,9 @@ uv run --python 3.12 python eleven-agent-platform/nailong_ingest.py docs/intro.m
 }
 ```
 
-### 3.2 检索
+### `POST /v1/retrieve`
 
-- `POST /v1/retrieve`
-- 请求体：
+请求体：
 
 ```json
 {
@@ -212,12 +383,16 @@ uv run --python 3.12 python eleven-agent-platform/nailong_ingest.py docs/intro.m
 }
 ```
 
-- 返回：`hits` 中包含 `chunk_id/document_id/content/score`
+返回字段包含：
 
-### 3.3 问答（带引用）
+- `chunk_id`
+- `document_id`
+- `content`
+- `score`
 
-- `POST /v1/chat`
-- 请求体：
+### `POST /v1/chat`
+
+请求体：
 
 ```json
 {
@@ -228,154 +403,93 @@ uv run --python 3.12 python eleven-agent-platform/nailong_ingest.py docs/intro.m
 }
 ```
 
-- 返回：`answer + sources[]`
+返回：
 
-### 3.4 偏好记忆
+- `answer`
+- `sources[]`
+
+### 偏好记忆
 
 - `POST /v1/memory/preferences`
 - `GET /v1/memory/preferences/{user_id}`
 
-## 4. 最小数据流
+## 测试说明
 
-1. `ingest`：输入文档 -> 切片 -> 写入 MySQL 元数据 -> 向量入本地索引文件。
-2. `retrieve`：关键词打分 + 向量相似度 + token 向量 fallback -> 混合分数重排 -> 返回 topK。
-3. `chat`：先检索证据 -> 结合用户偏好生成回答 -> 返回引用片段。
-4. `memory`：偏好记忆写入 MySQL，会话短时状态写入 Redis，并在健康检查中暴露连接池与操作指标。
+### 默认测试
 
-## 5. 当前状态与生产替换点
-
-当前为可运行骨架，已落地的能力和后续生产化替换点如下：
-
-- `repositories/metadata_repository.py`
-  - 当前：MySQL 存储文档与 chunk 元数据。
-  - 后续：补充迁移版本管理、删除一致性校验和更完整的索引策略。
-- `repositories/vector_repository.py`
-  - 当前：FAISS + `BAAI/bge-m3` embedding，本地持久化索引和 chunk 映射。
-  - 后续：按部署需要替换为独立向量库，补充索引重建、增量同步和召回质量监控。
-- `repositories/memory_repository.py`
-  - 当前：MySQL 存长期偏好，Redis 存短时会话，并记录基础操作指标。
-  - 后续：补充多租户隔离、权限校验、删除追踪和缓存一致性治理。
-- `services/retrieval_service.py`
-  - 当前：FAISS 召回 + 关键词/token/metadata 简化重排。
-  - 后续：接入 BM25/全文索引、真实 reranker 和离线评估闭环。
-- `services/chat_service.py`
-  - 当前：支持 OpenAI 兼容 LLM 调用；未启用 LLM 时走模板化兜底回答，仍返回 `sources[]`。
-  - 后续：补充 LLM 调用重试、超时降级、响应格式修复和引用完整性校验。
-
-## 6. 奶龙导入能力
-
-- `eleven-agent-platform/nailong_ingest.py` 通过 `LangChain + UnstructuredLoader` 解析 `.md/.txt/.pdf`。
-- 依赖 `langchain-unstructured`、`unstructured` 和 `markdown`。
-- 当前使用本地解析模式，扫描件 OCR 暂未接入。
-
-## 7. 向量索引重建
+默认 `pytest` 跑的是单元测试 + E2E 测试，不依赖真实 MySQL / Redis：
 
 ```bash
-uv run --python 3.12 python scripts/rebuild_faiss_index.py
+uv run --python 3.12 pytest
 ```
 
-## 8. Memory 初始化脚本管理
+### 真实依赖集成测试
 
-查看 memory 迁移状态：
+仓库已经提供了真实依赖集成测试，但默认关闭，避免把日常开发环境绑死。
 
-```bash
-uv run --python 3.12 python scripts/manage_memory_schema.py --action status
-```
-
-预演执行（不真正落库）：
-
-```bash
-uv run --python 3.12 python scripts/manage_memory_schema.py --action apply --dry-run
-```
-
-执行待应用脚本：
-
-```bash
-uv run --python 3.12 python scripts/manage_memory_schema.py --action apply
-```
-
-## 9. 终端快捷唤起（PowerShell）
-
-安装快捷命令（一次即可）：
+开启方式：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\install-nailong-ps.ps1
+$env:EMAP_RUN_INTEGRATION_TESTS="1"
+uv run --python 3.12 pytest -m integration
 ```
 
-重开终端后可直接使用：
+这组测试会尝试验证：
 
-```powershell
-奶龙 这份文档讲了什么？
-```
+- MySQL 元数据 `replace_chunks` 替换一致性
+- MySQL + Redis 的偏好 / 会话记忆读写
+- FAISS 索引文件的索引、删除、重建、检索闭环
 
-## 10. RAG 评估（RAGAS / Phoenix / LlamaIndex）
+注意：
 
-### 10.1 安装评估依赖
+- 需要本机可访问的 MySQL 与 Redis
+- 若依赖不可用，测试会自动跳过
+- FAISS 集成测试使用测试向量桩，不依赖在线模型下载
 
-```bash
-uv sync --python 3.12 --group eval
-```
+## 数据流
 
-### 10.2 准备评测集
+最小主链路如下：
 
-- 示例文件：`eval/sample_dataset.jsonl`
-- E2E 基准语料预置：
+1. `ingest`：输入文档 -> 切片 -> 写入 MySQL 元数据 -> 写入 FAISS 索引
+2. `retrieve`：BM25 -> FAISS -> reranker -> 融合打分 -> 返回候选证据
+3. `chat`：检索证据 -> 权限过滤 / guard -> 回答生成 -> 输出引用校验 -> 返回答案
+4. `memory`：偏好落 MySQL，会话落 Redis，并暴露健康指标
 
-```bash
-uv run --python 3.12 python scripts/prepare_eval_corpus.py
-```
+## 当前实现边界
 
-- 支持字段：
-  - `id` 或 `sample_id`
-  - `query`（必填）
-  - `reference_answer`（可选）
-  - `reference_contexts`（可选）
-  - `expected_chunk_ids`（可选，检索命中评估优先使用）
+### 已经比较像工程项目的部分
 
-### 10.3 执行离线评估
+- 混合检索链路真实存在
+- 记忆存储拆成 MySQL + Redis
+- 输出引用可校验
+- 有评测脚本
+- 有单测、E2E 和 gated integration tests
+- 有基础 Docker Compose 本地复现方案
 
-默认执行本地可计算指标（不依赖外部 LLM）：
+### 仍然需要继续补硬骨头的部分
 
-```bash
-uv run --python 3.12 python scripts/evaluate_rag.py --dataset eval/sample_dataset.jsonl
-```
+- 真实独立向量库
+- CI 自动跑集成测试
+- 更强的日志 / 监控 / 降级 / 限流
+- 更完整的知识记忆治理闭环
+- 更贴近生产的容器编排与镜像优化
 
-可选参数：
+## 推荐阅读顺序
 
-- `--output .rag_store/evals/latest_eval.json`
-- `--top-k 5`
-- `--doc-prefix doc-e2e-`：评估隔离，仅统计 `document_id` 以该前缀开头的召回结果（可重复传参）
-- `--enable-ragas`：启用 RAGAS 指标（需额外模型/推理配置）
-- `--enable-phoenix`：导出 Phoenix 可读 JSONL（用于后续观测分析）
-- `--phoenix-url http://127.0.0.1:6006`
-- `--min-retrieval-hit-rate 0.8`
-- `--min-context-precision 0.7`
-- `--min-context-recall 0.7`
-- `--min-citation-coverage 0.6`
+1. `AGENTS.md`
+2. `README.md`
+3. `BACKEND_GUIDE.md`
+4. `eleven-agent-platform/main.py`
+5. `controllers/`
+6. `qa/answering.py`
+7. `repositories/metadata_repository.py`
+8. `repositories/vector_repository.py`
+9. `repositories/memory_repository.py`
+10. `tests/`
 
-约束门禁示例（不达标即失败，退出码 `2`）：
+## 相关文档
 
-```bash
-uv run --python 3.12 python scripts/evaluate_rag.py \
-  --dataset eval/sample_dataset.jsonl \
-  --min-retrieval-hit-rate 0.8 \
-  --min-context-precision 0.7 \
-  --min-context-recall 0.7 \
-  --min-citation-coverage 0.6
-```
-
-### 10.4 当前输出指标
-
-- `retrieval_hit_rate`
-- `average_context_precision`
-- `average_context_recall`
-- `citation_coverage_rate`
-- `ragas_metrics`（启用且可用时输出）
-- `constraints`（阈值配置、是否通过、违规明细）
-
-### 10.5 与 LlamaIndex 的关系
-
-- 本仓库主编排仍保持 `LangChain`。
-- `LlamaIndex` 当前作为可选评估生态依赖引入，不改动现有业务链路。
-
-
+- `BACKEND_GUIDE.md`：后端阅读导图
+- `导学-EMAP.md`：项目导学
+- `面经-EMAP.md`：项目面试讲法
+- `进度文档.md`：近期演进记录

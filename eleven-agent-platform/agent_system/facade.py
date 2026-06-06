@@ -2,7 +2,7 @@
 from document_processing.pipeline import Pipeline
 from embedding.embedding_service import EmbeddingService
 from qa.answering import IntelligentQA
-from vector_storage.vector_store import QdrantVectorStore
+from vector_storage.vector_store import FaissVectorStore
 
 
 class AgentSystem:
@@ -10,7 +10,7 @@ class AgentSystem:
         self._document_processor: DocumentProcessor | None = None
         self._pipeline: Pipeline | None = None
         self._embedding_service: EmbeddingService | None = None
-        self._vector_store: QdrantVectorStore | None = None
+        self._vector_store: FaissVectorStore | None = None
         self._qa: IntelligentQA | None = None
         self._memory_service = None
 
@@ -29,9 +29,9 @@ class AgentSystem:
             self._embedding_service = EmbeddingService()
         return self._embedding_service
 
-    def _get_vector_store(self) -> QdrantVectorStore:
+    def _get_vector_store(self) -> FaissVectorStore:
         if self._vector_store is None:
-            self._vector_store = QdrantVectorStore()
+            self._vector_store = FaissVectorStore()
         return self._vector_store
 
     def _get_qa(self) -> IntelligentQA:
@@ -108,6 +108,9 @@ class AgentSystem:
             top_k=top_k,
             doc_id_prefixes=doc_id_prefixes,
         )
+
+    def get_last_trace(self) -> dict | None:
+        return self._get_qa().get_last_trace()
 
     def upsert_preference(self, user_id: str, key: str, value: str) -> None:
         self._get_memory_service().upsert_preference(user_id, key, value)

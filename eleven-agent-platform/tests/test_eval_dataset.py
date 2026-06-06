@@ -10,7 +10,7 @@ from evaluation.dataset import EvalSample, load_eval_samples
 def test_load_eval_samples_from_jsonl(tmp_path):
     dataset = tmp_path / "dataset.jsonl"
     dataset.write_text(
-        """{"id":"a1","query":"q1","expected_chunk_ids":["c1"]}\n{"id":"a2","question":"q2","reference_answer":"ans"}\n""",
+        """{"id":"a1","query":"q1","expected_chunk_ids":["c1"],"expected_refusal":true,"required_citations":true,"forbidden_chunk_ids":["x"],"allowed_doc_prefixes":["doc-a"]}\n{"id":"a2","question":"q2","reference_answer":"ans"}\n""",
         encoding="utf-8",
     )
 
@@ -20,6 +20,10 @@ def test_load_eval_samples_from_jsonl(tmp_path):
     assert samples[0].sample_id == "a1"
     assert samples[0].query == "q1"
     assert samples[0].expected_chunk_ids == ["c1"]
+    assert samples[0].expected_refusal is True
+    assert samples[0].required_citations is True
+    assert samples[0].forbidden_chunk_ids == ["x"]
+    assert samples[0].allowed_doc_prefixes == ["doc-a"]
     assert samples[1].query == "q2"
     assert samples[1].reference_answer == "ans"
 
@@ -60,5 +64,9 @@ def test_load_eval_samples_from_json(tmp_path):
             reference_answer="answer",
             reference_contexts=[],
             expected_chunk_ids=[],
+            expected_refusal=None,
+            required_citations=None,
+            forbidden_chunk_ids=[],
+            allowed_doc_prefixes=[],
         )
     ]
