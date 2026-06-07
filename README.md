@@ -241,8 +241,9 @@ curl http://127.0.0.1:8000/health
 启动前准备：
 
 1. 复制 `.env.example` 为 `.env`
-2. 如需启用真实 LLM，填好 `LLM_*` 配置
-3. 如不启用 LLM，保持 `LLM_ENABLED=false` 即可
+2. 如需给容器传入额外配置，复制 `.env.docker.example` 为 `.env.docker`
+3. 如需启用真实 LLM，把 `LLM_*` 配置写到 `.env.docker`
+4. 如不启用 LLM，保持 `.env.docker` 中的 `LLM_ENABLED=false` 或不创建该文件即可
 
 启动命令：
 
@@ -281,6 +282,7 @@ docker compose down
 - API 默认暴露在 `http://127.0.0.1:8000`
 - MySQL 暴露在本机 `3306`
 - Redis 暴露在本机 `6379`
+- Compose 不再默认把本机 `.env` 注入容器，容器专用覆盖项请放在 `.env.docker`
 
 当前已知限制：
 

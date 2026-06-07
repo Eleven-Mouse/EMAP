@@ -10,6 +10,7 @@ venv/
 
 # Local configuration and generated runtime data
 .env
+.env.docker
 .rag_store/
 .run/
 tmp_meta.db
