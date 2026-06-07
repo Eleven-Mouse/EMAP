@@ -3,6 +3,11 @@ __pycache__/
 *.py[cod]
 *.pyo
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
 
 # Virtual environments
 .venv/
@@ -15,6 +20,12 @@ venv/
 .run/
 tmp_meta.db
 *.log
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+faiss.index
+faiss_mapping.json
 
 # IDE metadata
 .idea/

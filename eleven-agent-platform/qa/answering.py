@@ -9,6 +9,7 @@ from guards.output_guard import OutputGuard, build_grounded_safe_answer
 from langchain_core.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
 from qa.retrieval_stack import BM25Retriever, CrossEncoderReranker
+from repositories.metadata_repository import StoredChunk
 from schemas.common import SourceItem
 
 
@@ -57,6 +58,28 @@ class AnswerGenerationResult:
     mode: str | None = None
 
 
+@dataclass
+class RetrievalCandidate:
+    candidate_id: str
+    document_id: str
+    content: str
+    search_text: str
+    source_type: str
+    source: str
+    chunk_order: int = 0
+    memory_id: str | None = None
+    scope_id: str | None = None
+
+    def as_stored_chunk(self) -> StoredChunk:
+        return StoredChunk(
+            chunk_id=self.candidate_id,
+            document_id=self.document_id,
+            content=self.search_text,
+            source=self.source,
+            chunk_order=self.chunk_order,
+        )
+
+
 class RetrievalOrchestrator:
     def __init__(self, qa: "IntelligentQA") -> None:
         self._qa = qa
@@ -73,6 +96,42 @@ class RetrievalOrchestrator:
             for chunk in chunks
             if any(chunk.document_id.startswith(prefix) for prefix in prefixes)
         ]
+
+    @staticmethod
+    def _build_document_candidates(chunks: list[StoredChunk]) -> list[RetrievalCandidate]:
+        return [
+            RetrievalCandidate(
+                candidate_id=chunk.chunk_id,
+                document_id=chunk.document_id,
+                content=chunk.content,
+                search_text=chunk.content,
+                source_type="document_chunk",
+                source=chunk.source,
+                chunk_order=chunk.chunk_order,
+            )
+            for chunk in chunks
+        ]
+
+    @staticmethod
+    def _build_knowledge_candidates(memories) -> list[RetrievalCandidate]:
+        candidates: list[RetrievalCandidate] = []
+        for memory in memories:
+            search_text = memory.content.strip()
+            if memory.title.strip():
+                search_text = f"{memory.title.strip()}\n{search_text}"
+            candidates.append(
+                RetrievalCandidate(
+                    candidate_id=memory.memory_id,
+                    document_id=memory.scope_id,
+                    content=memory.content,
+                    search_text=search_text,
+                    source_type="knowledge_memory",
+                    source=memory.source,
+                    memory_id=memory.memory_id,
+                    scope_id=memory.scope_id,
+                )
+            )
+        return candidates
 
     @staticmethod
     def _compose_scores(
@@ -113,15 +172,27 @@ class RetrievalOrchestrator:
             metadata_repository.list_chunks(),
             doc_id_prefixes=doc_id_prefixes,
         )
-        if not chunks:
+        knowledge_memories = []
+        try:
+            knowledge_repository = self._qa._get_knowledge_repository()
+            knowledge_memories = knowledge_repository.list_active_memories(
+                scope_prefixes=doc_id_prefixes
+            )
+        except Exception:
+            knowledge_memories = []
+        knowledge_candidates = self._build_knowledge_candidates(knowledge_memories)
+        document_candidates = self._build_document_candidates(chunks)
+        all_candidates = document_candidates + knowledge_candidates
+        if not all_candidates:
             return []
 
-        chunk_map = {chunk.chunk_id: chunk for chunk in chunks}
+        candidate_map = {candidate.candidate_id: candidate for candidate in all_candidates}
+        rerank_chunks = [candidate.as_stored_chunk() for candidate in all_candidates]
         bm25_hits: list[tuple[str, float]] = []
         if settings.hybrid_bm25_enabled:
             bm25_hits = self._qa._get_bm25_retriever().query(
                 query=query,
-                chunks=chunks,
+                chunks=rerank_chunks,
                 top_k=max(top_k, settings.hybrid_bm25_top_k),
             )
 
@@ -133,7 +204,7 @@ class RetrievalOrchestrator:
                     text=query,
                     top_k=max(top_k, settings.hybrid_vector_top_k),
                 )
-                if hit.chunk_id in chunk_map
+                if hit.chunk_id in candidate_map
             ]
 
         bm25_score_map = {chunk_id: score for chunk_id, score in bm25_hits}
@@ -145,7 +216,9 @@ class RetrievalOrchestrator:
             )
         )
         if not ordered_candidate_ids:
-            ordered_candidate_ids = [chunk.chunk_id for chunk in chunks[: max(1, top_k)]]
+            ordered_candidate_ids = [
+                candidate.candidate_id for candidate in all_candidates[: max(1, top_k)]
+            ]
 
         pre_rerank_scores = self._compose_scores(
             candidate_ids=ordered_candidate_ids,
@@ -167,7 +240,7 @@ class RetrievalOrchestrator:
         if settings.hybrid_reranker_enabled and candidate_ids:
             reranker_score_map = self._qa._get_reranker().score(
                 query=query,
-                chunks=[chunk_map[cid] for cid in candidate_ids],
+                chunks=[candidate_map[cid].as_stored_chunk() for cid in candidate_ids],
             )
 
         final_scores = self._compose_scores(
@@ -187,10 +260,13 @@ class RetrievalOrchestrator:
         )[:top_k]
         return [
             SourceItem(
-                chunk_id=chunk_map[chunk_id].chunk_id,
-                document_id=chunk_map[chunk_id].document_id,
-                content=chunk_map[chunk_id].content,
+                chunk_id=candidate_map[chunk_id].candidate_id,
+                document_id=candidate_map[chunk_id].document_id,
+                content=candidate_map[chunk_id].content,
                 score=round(final_scores.get(chunk_id, 0.0), 4),
+                source_type=candidate_map[chunk_id].source_type,
+                memory_id=candidate_map[chunk_id].memory_id,
+                scope_id=candidate_map[chunk_id].scope_id,
             )
             for chunk_id in ranked_chunk_ids
         ]
@@ -344,6 +420,7 @@ class IntelligentQA:
     def __init__(self) -> None:
         self._memory_service = None
         self._llm_client = None
+        self._knowledge_repository = None
         self._bm25_retriever = None
         self._reranker = None
         self._input_guard = None
@@ -378,6 +455,13 @@ class IntelligentQA:
         from services.container import metadata_repository, vector_repository
 
         return metadata_repository, vector_repository
+
+    def _get_knowledge_repository(self):
+        if self._knowledge_repository is None:
+            from services.container import knowledge_repository
+
+            self._knowledge_repository = knowledge_repository
+        return self._knowledge_repository
 
     def _get_input_guard(self) -> InputGuard:
         if self._input_guard is None:
@@ -497,6 +581,7 @@ class IntelligentQA:
             "degraded": False,
             "mode": "normal",
             "retrieved_chunk_ids": [],
+            "retrieved_source_types": [],
             "output_guard_labels": [],
         }
 
@@ -534,6 +619,7 @@ class IntelligentQA:
             doc_id_prefixes=access_decision.effective_prefixes,
         )
         trace["retrieved_chunk_ids"] = [item.chunk_id for item in hits]
+        trace["retrieved_source_types"] = [item.source_type for item in hits]
         prefs = memory_service.list_preferences(user_id)
 
         if not hits:

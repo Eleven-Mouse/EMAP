@@ -118,3 +118,84 @@ class AgentSystem:
     def list_preferences(self, user_id: str):
         return self._get_memory_service().list_preferences(user_id)
 
+    def create_knowledge_memory(
+        self,
+        scope_id: str,
+        title: str,
+        content: str,
+        source: str,
+        tags: list[str],
+        metadata: dict,
+        actor_id: str,
+        change_note: str = "",
+        memory_id: str | None = None,
+    ):
+        return self._get_memory_service().create_knowledge_memory(
+            scope_id=scope_id,
+            title=title,
+            content=content,
+            source=source,
+            tags=tags,
+            metadata=metadata,
+            actor_id=actor_id,
+            change_note=change_note,
+            memory_id=memory_id,
+        )
+
+    def update_knowledge_memory(
+        self,
+        memory_id: str,
+        actor_id: str,
+        change_note: str = "",
+        title: str | None = None,
+        content: str | None = None,
+        source: str | None = None,
+        tags: list[str] | None = None,
+        metadata: dict | None = None,
+    ):
+        return self._get_memory_service().update_knowledge_memory(
+            memory_id=memory_id,
+            actor_id=actor_id,
+            change_note=change_note,
+            title=title,
+            content=content,
+            source=source,
+            tags=tags,
+            metadata=metadata,
+        )
+
+    def get_knowledge_memory(self, memory_id: str):
+        return self._get_memory_service().get_knowledge_memory(memory_id)
+
+    def list_knowledge_memories(self, scope_prefixes: list[str] | None = None):
+        return self._get_memory_service().list_knowledge_memories(
+            scope_prefixes=scope_prefixes
+        )
+
+    def delete_knowledge_memory(
+        self,
+        memory_id: str,
+        actor_id: str,
+        change_note: str = "",
+    ):
+        return self._get_memory_service().delete_knowledge_memory(
+            memory_id=memory_id,
+            actor_id=actor_id,
+            change_note=change_note,
+        )
+
+    def restore_knowledge_memory(
+        self,
+        memory_id: str,
+        actor_id: str,
+        change_note: str = "",
+    ):
+        return self._get_memory_service().restore_knowledge_memory(
+            memory_id=memory_id,
+            actor_id=actor_id,
+            change_note=change_note,
+        )
+
+    def list_knowledge_memory_history(self, memory_id: str):
+        return self._get_memory_service().list_knowledge_memory_history(memory_id)
+

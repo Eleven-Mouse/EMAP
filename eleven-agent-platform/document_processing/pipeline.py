@@ -1,10 +1,30 @@
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-
 from core.config import settings
 from document_processing.document_processor import DocumentProcessor
 
 
 def _build_splitter(chunk_size: int, overlap: int, chunk_strategy: str):
+    try:
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
+    except ImportError:
+        class RecursiveCharacterTextSplitter:  # type: ignore[no-redef]
+            def __init__(self, chunk_size: int, chunk_overlap: int, separators: list[str]):
+                self.chunk_size = chunk_size
+                self.chunk_overlap = chunk_overlap
+                self.separators = separators
+
+            def split_text(self, text: str) -> list[str]:
+                normalized = str(text or "").strip()
+                if not normalized:
+                    return []
+                if len(normalized) <= self.chunk_size:
+                    return [normalized]
+                step = max(1, self.chunk_size - self.chunk_overlap)
+                return [
+                    normalized[index : index + self.chunk_size].strip()
+                    for index in range(0, len(normalized), step)
+                    if normalized[index : index + self.chunk_size].strip()
+                ]
+
     strategy = (chunk_strategy or "recursive").strip().lower()
     separators = ["\n\n", "\n", "。", "！", "？", " ", ""]
     if strategy == "markdown":

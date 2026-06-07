@@ -44,6 +44,19 @@ def test_ingestion_service_delegates_pipeline(monkeypatch):
     )
 
 
+def test_ingestion_service_delegates_index_job_submission():
+    class FakeIndexingService:
+        def submit_document_job(self, **kwargs):
+            return {"job_id": "idx-1", **kwargs}
+
+    svc = IngestionService()
+    svc._indexing_service = FakeIndexingService()
+    result = svc.submit_ingest_job("d1", "c", None, "manual", "sentence", 256, 32)
+
+    assert result["job_id"] == "idx-1"
+    assert result["document_id"] == "d1"
+
+
 def test_retrieval_service_delegates_qa():
     class FakeQA:
         def retrieve(self, query, top_k):

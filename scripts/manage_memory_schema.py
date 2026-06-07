@@ -49,6 +49,14 @@ def _load_scripts() -> list[MigrationScript]:
             version_tag="v1_init_user_preferences",
             path=ROOT / "scripts" / "init_mysql_memory.sql",
         ),
+        MigrationScript(
+            version_tag="v2_init_knowledge_memory",
+            path=ROOT / "scripts" / "init_mysql_knowledge_memory.sql",
+        ),
+        MigrationScript(
+            version_tag="v3_init_index_jobs",
+            path=ROOT / "scripts" / "init_mysql_index_jobs.sql",
+        ),
     ]
 
 

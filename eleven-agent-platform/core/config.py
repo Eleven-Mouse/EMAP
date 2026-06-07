@@ -217,6 +217,20 @@ class Settings:
         self.faiss_mapping_path = os.getenv(
             "FAISS_MAPPING_PATH", f"{self.rag_store_dir}/faiss_mapping.json"
         )
+        self.vector_backend = os.getenv("VECTOR_BACKEND", "faiss").strip().lower()
+        self.qdrant_url = os.getenv("QDRANT_URL", "http://127.0.0.1:6333").rstrip("/")
+        self.qdrant_collection_name = os.getenv(
+            "QDRANT_COLLECTION_NAME",
+            "eleven_rag_vectors",
+        )
+        self.index_job_autoprocess = _to_bool(
+            os.getenv("INDEX_JOB_AUTOPROCESS", "true"),
+            True,
+        )
+        self.index_job_poll_limit = _to_int(
+            os.getenv("INDEX_JOB_POLL_LIMIT", "20"),
+            20,
+        )
         self.vector_index_path = self.faiss_index_path
 
 

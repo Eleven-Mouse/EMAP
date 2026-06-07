@@ -1,7 +1,12 @@
-import redis
+try:
+    import redis
+except ImportError:  # pragma: no cover - exercised only in constrained test envs
+    redis = None
 
 from core.config import settings
 from repositories.document_repository import DocumentRepository
+from repositories.index_job_repository import IndexJobRepository
+from repositories.knowledge_repository import KnowledgeRepository
 from repositories.metadata_repository import MetadataRepository
 from repositories.memory_repository import MemoryRepository
 from repositories.vector_repository import VectorRepository
@@ -14,6 +19,9 @@ vector_repository = VectorRepository(
     embedding_model_name=settings.embedding_model_name,
     embedding_cache_dir=settings.embedding_cache_dir,
     embedding_device=settings.embedding_device,
+    backend_name=settings.vector_backend,
+    qdrant_url=settings.qdrant_url,
+    qdrant_collection_name=settings.qdrant_collection_name,
 )
 
 mysql_client = PooledMySQLClient(
@@ -28,9 +36,23 @@ metadata_repository = MetadataRepository(
     retry_attempts=settings.mysql_retry_attempts,
     retry_backoff_seconds=settings.mysql_retry_backoff_seconds,
 )
-redis_client = redis.Redis.from_url(
-    settings.redis_url,
-    decode_responses=False,
+knowledge_repository = KnowledgeRepository(
+    mysql_client=mysql_client,
+    retry_attempts=settings.mysql_retry_attempts,
+    retry_backoff_seconds=settings.mysql_retry_backoff_seconds,
+)
+index_job_repository = IndexJobRepository(
+    mysql_client=mysql_client,
+    retry_attempts=settings.mysql_retry_attempts,
+    retry_backoff_seconds=settings.mysql_retry_backoff_seconds,
+)
+redis_client = (
+    redis.Redis.from_url(
+        settings.redis_url,
+        decode_responses=False,
+    )
+    if redis is not None
+    else None
 )
 memory_repository = MemoryRepository(
     mysql_client=mysql_client,
@@ -62,4 +84,6 @@ def get_memory_health_snapshot() -> dict:
         "mysql_pool": mysql_status,
         "redis_pool": redis_status,
         "memory_metrics": memory_repository.get_metrics_snapshot(),
+        "index_jobs": index_job_repository.summarize_statuses(),
+        "vector_backend": settings.vector_backend,
     }
