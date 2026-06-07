@@ -45,7 +45,8 @@ services:
       redis:
         condition: service_healthy
     env_file:
-      - .env
+      - path: .env.docker
+        required: false
     environment:
       APP_ENV: docker
       MYSQL_DSN: mysql+pymysql://root:password@mysql:3306/eleven_rag?charset=utf8mb4
