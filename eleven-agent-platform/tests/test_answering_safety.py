@@ -3,6 +3,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from core.runtime_metrics import get_runtime_metrics_snapshot, reset_runtime_metrics
 from qa.answering import IntelligentQA
 from repositories.metadata_repository import StoredChunk
 from repositories.vector_repository import VectorHit
@@ -149,3 +150,31 @@ def test_ask_high_risk_uses_grounded_mode(monkeypatch):
 
     assert "保守模式" in answer
     assert qa.get_last_trace()["mode"] == "high_risk_grounded_only"
+
+
+def test_ask_records_trace_and_runtime_metrics(monkeypatch):
+    reset_runtime_metrics()
+    qa = _build_qa()
+    monkeypatch.setattr("qa.answering.settings.llm_enabled", False)
+    monkeypatch.setattr("qa.answering.settings.user_doc_permissions", "u1=doc-team-a")
+    qa._access_controller = None
+
+    answer, sources = qa.ask(
+        user_id="u1",
+        session_id="s5",
+        query="系统采用什么回答方式？",
+        top_k=3,
+        trace_id="trace-xyz",
+    )
+
+    trace = qa.get_last_trace()
+    metrics = get_runtime_metrics_snapshot()
+
+    assert answer
+    assert len(sources) == 1
+    assert trace["trace_id"] == "trace-xyz"
+    assert trace["duration_ms"] >= 0
+    assert qa._audit_logger.records[-1]["trace_id"] == "trace-xyz"
+    assert metrics["counters"]["qa.ask.calls"] == 1
+    assert metrics["timers"]["qa.ask.total_ms"]["calls"] == 1
+    assert metrics["timers"]["qa.retrieve.duration_ms"]["calls"] == 1

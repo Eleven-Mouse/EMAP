@@ -1,10 +1,12 @@
 import math
 from dataclasses import dataclass
+from time import perf_counter
 
 from audit.audit_logger import AuditLogger
 from authz.access_control import AccessController
 from core.app_logging import get_logger
 from core.config import settings
+from core.runtime_metrics import increment_metric, record_duration_metric
 from guards.input_guard import InputGuard
 from guards.output_guard import OutputGuard, build_grounded_safe_answer
 from langchain_core.output_parsers import PydanticOutputParser
@@ -545,6 +547,17 @@ class IntelligentQA:
                 },
             )
 
+    def _log_stage(self, trace_id: str | None, stage: str, **extra) -> None:
+        logger.info(
+            "qa_stage",
+            extra={
+                "event": "qa_stage",
+                "trace_id": trace_id,
+                "stage": stage,
+                **extra,
+            },
+        )
+
     def get_last_trace(self) -> dict | None:
         return self._last_trace
 
@@ -570,7 +583,11 @@ class IntelligentQA:
         query: str,
         top_k: int | None,
         doc_id_prefixes: list[str] | None = None,
+        trace_id: str | None = None,
     ) -> tuple[str, list[SourceItem]]:
+        ask_started_at = perf_counter()
+        increment_metric("qa.ask.calls")
+        self._log_stage(trace_id, "ask_started", user_id=user_id, session_id=session_id)
         k = top_k or settings.top_k
         memory_service = self._get_memory_service()
         input_guard_result = (
@@ -588,6 +605,7 @@ class IntelligentQA:
             requested_prefixes=doc_id_prefixes,
         )
         trace = {
+            "trace_id": trace_id,
             "user_id": user_id,
             "session_id": session_id,
             "query": sanitized_query,
@@ -607,6 +625,7 @@ class IntelligentQA:
         memory_service.append_session(session_id, f"user: {sanitized_query}")
 
         if input_guard_result and not input_guard_result.allowed:
+            increment_metric("qa.ask.blocked_input_guard")
             answer = input_guard_result.response_text or "这个请求不符合安全要求，奶龙先拒绝处理。"
             memory_service.append_session(session_id, f"assistant: {answer}")
             trace.update(
@@ -616,10 +635,13 @@ class IntelligentQA:
                     "answer": answer,
                 }
             )
+            self._log_stage(trace_id, "blocked_by_input_guard")
+            record_duration_metric("qa.ask.total_ms", (perf_counter() - ask_started_at) * 1000)
             self._record_trace(trace)
             return answer, []
 
         if not access_decision.allowed:
+            increment_metric("qa.ask.blocked_access_control")
             answer = "你当前没有访问这批文档的权限，先补充授权范围或切换到有权限的资料。"
             memory_service.append_session(session_id, f"assistant: {answer}")
             trace.update(
@@ -629,22 +651,38 @@ class IntelligentQA:
                     "answer": answer,
                 }
             )
+            self._log_stage(trace_id, "blocked_by_access_control")
+            record_duration_metric("qa.ask.total_ms", (perf_counter() - ask_started_at) * 1000)
             self._record_trace(trace)
             return answer, []
 
+        self._log_stage(trace_id, "retrieve_started", top_k=k)
+        retrieve_started_at = perf_counter()
         hits = self._retrieve(
             query=sanitized_query,
             top_k=k,
             doc_id_prefixes=access_decision.effective_prefixes,
         )
+        retrieve_duration_ms = (perf_counter() - retrieve_started_at) * 1000
+        record_duration_metric("qa.retrieve.duration_ms", retrieve_duration_ms)
         trace["retrieved_chunk_ids"] = [item.chunk_id for item in hits]
         trace["retrieved_source_types"] = [item.source_type for item in hits]
+        self._log_stage(
+            trace_id,
+            "retrieve_finished",
+            hit_count=len(hits),
+            duration_ms=round(retrieve_duration_ms, 2),
+        )
         prefs = memory_service.list_preferences(user_id)
 
         if not hits:
+            increment_metric("qa.ask.no_hits")
             answer = "奶龙在呢，但我还没找到可引用证据。先导入文档，我们再一起看。"
             memory_service.append_session(session_id, f"assistant: {answer}")
             trace["answer"] = answer
+            trace["duration_ms"] = round((perf_counter() - ask_started_at) * 1000, 2)
+            self._log_stage(trace_id, "no_hits")
+            record_duration_metric("qa.ask.total_ms", trace["duration_ms"])
             self._record_trace(trace)
             return answer, []
 
@@ -654,6 +692,12 @@ class IntelligentQA:
             and bool(settings.llm_api_key)
         )
         risk_level = input_guard_result.risk_level if input_guard_result else "low"
+        self._log_stage(
+            trace_id,
+            "answer_generation_started",
+            llm_requested=llm_requested,
+        )
+        generation_started_at = perf_counter()
         generation = self._get_answer_generator().generate(
             query=sanitized_query,
             hits=hits,
@@ -661,26 +705,56 @@ class IntelligentQA:
             risk_level=risk_level,
             llm_requested=llm_requested,
         )
+        generation_duration_ms = (perf_counter() - generation_started_at) * 1000
+        record_duration_metric("qa.answer_generation.duration_ms", generation_duration_ms)
         answer = generation.answer
         if generation.degraded:
             trace["degraded"] = True
+            increment_metric("qa.ask.degraded")
         if generation.mode:
             trace["mode"] = generation.mode
+        self._log_stage(
+            trace_id,
+            "answer_generation_finished",
+            duration_ms=round(generation_duration_ms, 2),
+            degraded=trace["degraded"],
+            mode=trace["mode"],
+        )
 
         if settings.output_guard_enabled:
+            output_guard_started_at = perf_counter()
             output_guard_result = self._get_output_guard().validate(
                 query=sanitized_query,
                 answer=answer,
                 hits=hits,
                 risk_level=risk_level,
             )
+            output_guard_duration_ms = (perf_counter() - output_guard_started_at) * 1000
+            record_duration_metric("qa.output_guard.duration_ms", output_guard_duration_ms)
             answer = output_guard_result.final_answer
             if not output_guard_result.passed:
                 trace["degraded"] = True
                 trace["mode"] = output_guard_result.reason or "output_guard_degraded"
+                increment_metric("qa.ask.output_guard_degraded")
             trace["output_guard_labels"] = output_guard_result.labels
+            self._log_stage(
+                trace_id,
+                "output_guard_finished",
+                duration_ms=round(output_guard_duration_ms, 2),
+                passed=output_guard_result.passed,
+            )
 
         memory_service.append_session(session_id, f"assistant: {answer}")
         trace["answer"] = answer
+        total_duration_ms = (perf_counter() - ask_started_at) * 1000
+        trace["duration_ms"] = round(total_duration_ms, 2)
+        record_duration_metric("qa.ask.total_ms", total_duration_ms)
+        self._log_stage(
+            trace_id,
+            "ask_finished",
+            duration_ms=trace["duration_ms"],
+            degraded=trace["degraded"],
+            blocked=trace["blocked"],
+        )
         self._record_trace(trace)
         return answer, hits

@@ -100,6 +100,7 @@ class AgentSystem:
         query: str,
         top_k: int | None = None,
         doc_id_prefixes: list[str] | None = None,
+        trace_id: str | None = None,
     ):
         return self._get_qa().ask(
             user_id=user_id,
@@ -107,6 +108,7 @@ class AgentSystem:
             query=query,
             top_k=top_k,
             doc_id_prefixes=doc_id_prefixes,
+            trace_id=trace_id,
         )
 
     def get_last_trace(self) -> dict | None:

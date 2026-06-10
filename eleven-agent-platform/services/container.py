@@ -7,6 +7,7 @@ except ImportError:  # pragma: no cover - exercised only in constrained test env
 
 from core.app_logging import get_logger
 from core.config import settings
+from core.runtime_metrics import get_runtime_metrics_snapshot
 from repositories.document_repository import DocumentRepository
 from repositories.index_job_repository import IndexJobRepository
 from repositories.knowledge_repository import KnowledgeRepository
@@ -186,6 +187,7 @@ def get_memory_health_snapshot() -> dict:
         "mysql_pool": mysql_status,
         "redis_pool": redis_status,
         "memory_metrics": memory_repository.get_metrics_snapshot(),
+        "runtime_metrics": get_runtime_metrics_snapshot(),
         "index_jobs": index_jobs,
         "vector_backend": settings.vector_backend,
     }

@@ -13,6 +13,7 @@ class ChatService:
         query: str,
         top_k: int | None,
         doc_id_prefixes: list[str] | None = None,
+        trace_id: str | None = None,
     ):
         k = top_k or settings.top_k
         return self._qa.ask(
@@ -21,4 +22,5 @@ class ChatService:
             query=query,
             top_k=k,
             doc_id_prefixes=doc_id_prefixes,
+            trace_id=trace_id,
         )

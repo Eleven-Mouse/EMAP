@@ -28,6 +28,7 @@ app.include_router(memory_router, prefix="/v1")
 @app.middleware("http")
 async def log_request_metrics(request, call_next):
     trace_id = request.headers.get("x-request-id", uuid4().hex[:16])
+    request.state.trace_id = trace_id
     start = perf_counter()
     try:
         response = await call_next(request)

@@ -62,7 +62,7 @@ class FakeQA:
     def retrieve(self, query, top_k):
         return {"query": query, "top_k": top_k}
 
-    def ask(self, user_id, session_id, query, top_k, doc_id_prefixes=None):
+    def ask(self, user_id, session_id, query, top_k, doc_id_prefixes=None, trace_id=None):
         return ("answer", [{"user_id": user_id, "session_id": session_id, "query": query, "top_k": top_k}])
 
 
