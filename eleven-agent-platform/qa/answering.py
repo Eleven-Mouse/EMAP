@@ -410,7 +410,12 @@ class AnswerGenerator:
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "llm_generation_failed",
-                    extra={"event": "llm_generation_failed", "detail": str(exc)},
+                    extra={
+                        "event": "llm_generation_failed",
+                        "stage": "answer_generation",
+                        "degrade_reason": "llm_generation_failed",
+                        "detail": str(exc),
+                    },
                 )
 
         if not answer:
@@ -532,7 +537,12 @@ class IntelligentQA:
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "audit_log_failed",
-                extra={"event": "audit_log_failed", "detail": str(exc)},
+                extra={
+                    "event": "audit_log_failed",
+                    "stage": "audit",
+                    "degrade_reason": "audit_log_failed",
+                    "detail": str(exc),
+                },
             )
 
     def get_last_trace(self) -> dict | None:

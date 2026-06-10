@@ -34,7 +34,10 @@ class MemoryRepository:
 
     def _alert(self, message: str) -> None:
         if self.monitor_enabled:
-            logger.warning(message, extra={"event": "memory_alert"})
+            logger.warning(
+                message,
+                extra={"event": "memory_alert", "stage": "memory_repository"},
+            )
 
     def _record_metric(self, op_name: str, duration_ms: float, failed: bool) -> None:
         bucket = self._metrics[op_name]

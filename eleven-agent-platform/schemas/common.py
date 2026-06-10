@@ -18,6 +18,12 @@ class DependencyHealth(BaseModel):
     backend: str | None = None
 
 
+class LivenessResponse(BaseModel):
+    status: str
+    app: str
+    env: str
+
+
 class HealthResponse(BaseModel):
     status: str
     app: str

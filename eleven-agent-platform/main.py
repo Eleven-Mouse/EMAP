@@ -27,7 +27,7 @@ app.include_router(memory_router, prefix="/v1")
 
 @app.middleware("http")
 async def log_request_metrics(request, call_next):
-    request_id = request.headers.get("x-request-id", uuid4().hex[:16])
+    trace_id = request.headers.get("x-request-id", uuid4().hex[:16])
     start = perf_counter()
     try:
         response = await call_next(request)
@@ -36,7 +36,8 @@ async def log_request_metrics(request, call_next):
             "http_request_failed",
             extra={
                 "event": "http_request",
-                "request_id": request_id,
+                "trace_id": trace_id,
+                "stage": "http_request",
                 "method": request.method,
                 "path": request.url.path,
             },
@@ -44,12 +45,13 @@ async def log_request_metrics(request, call_next):
         raise
 
     duration_ms = (perf_counter() - start) * 1000
-    response.headers["x-request-id"] = request_id
+    response.headers["x-request-id"] = trace_id
     logger.info(
         "http_request_completed",
         extra={
             "event": "http_request",
-            "request_id": request_id,
+            "trace_id": trace_id,
+            "stage": "http_request",
             "method": request.method,
             "path": request.url.path,
             "status_code": response.status_code,
@@ -66,5 +68,10 @@ def warmup_vector_store() -> None:
     except Exception as exc:
         logger.warning(
             "embedding_warmup_failed",
-            extra={"event": "embedding_warmup_failed", "detail": str(exc)},
+            extra={
+                "event": "embedding_warmup_failed",
+                "stage": "startup",
+                "degrade_reason": "embedding_warmup_failed",
+                "detail": str(exc),
+            },
         )

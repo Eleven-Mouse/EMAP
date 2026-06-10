@@ -17,6 +17,26 @@ from services.mysql_pool import PooledMySQLClient
 
 logger = get_logger(__name__)
 
+
+class UnavailableComponent:
+    def __init__(self, name: str, error: Exception) -> None:
+        self.name = name
+        self.error = error
+
+    def __getattr__(self, item: str):
+        raise RuntimeError(f"{self.name} is unavailable: {self.error}") from self.error
+
+
+def _build_component(name: str, factory):
+    try:
+        return factory()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "component_init_failed",
+            extra={"event": "component_init_failed", "component": name, "detail": str(exc)},
+        )
+        return UnavailableComponent(name=name, error=exc)
+
 document_repository = DocumentRepository()
 vector_repository = VectorRepository(
     index_path=settings.faiss_index_path,
@@ -36,20 +56,29 @@ mysql_client = PooledMySQLClient(
     pool_recycle_seconds=settings.mysql_pool_recycle_seconds,
     pool_timeout_seconds=settings.mysql_pool_timeout_seconds,
 )
-metadata_repository = MetadataRepository(
-    mysql_client=mysql_client,
-    retry_attempts=settings.mysql_retry_attempts,
-    retry_backoff_seconds=settings.mysql_retry_backoff_seconds,
+metadata_repository = _build_component(
+    "metadata_repository",
+    lambda: MetadataRepository(
+        mysql_client=mysql_client,
+        retry_attempts=settings.mysql_retry_attempts,
+        retry_backoff_seconds=settings.mysql_retry_backoff_seconds,
+    ),
 )
-knowledge_repository = KnowledgeRepository(
-    mysql_client=mysql_client,
-    retry_attempts=settings.mysql_retry_attempts,
-    retry_backoff_seconds=settings.mysql_retry_backoff_seconds,
+knowledge_repository = _build_component(
+    "knowledge_repository",
+    lambda: KnowledgeRepository(
+        mysql_client=mysql_client,
+        retry_attempts=settings.mysql_retry_attempts,
+        retry_backoff_seconds=settings.mysql_retry_backoff_seconds,
+    ),
 )
-index_job_repository = IndexJobRepository(
-    mysql_client=mysql_client,
-    retry_attempts=settings.mysql_retry_attempts,
-    retry_backoff_seconds=settings.mysql_retry_backoff_seconds,
+index_job_repository = _build_component(
+    "index_job_repository",
+    lambda: IndexJobRepository(
+        mysql_client=mysql_client,
+        retry_attempts=settings.mysql_retry_attempts,
+        retry_backoff_seconds=settings.mysql_retry_backoff_seconds,
+    ),
 )
 redis_client = (
     redis.Redis.from_url(
@@ -83,7 +112,12 @@ def _dependency_ok(latency_ms: float | None = None, **extra) -> dict:
 def _dependency_error(name: str, detail: str) -> dict:
     logger.warning(
         "dependency_probe_failed",
-        extra={"event": "dependency_probe_failed", "dependency": name, "detail": detail},
+        extra={
+            "event": "dependency_probe_failed",
+            "stage": "health_probe",
+            "dependency": name,
+            "detail": detail,
+        },
     )
     return {"status": "degraded", "detail": detail}
 
@@ -109,7 +143,10 @@ def _probe_redis() -> dict:
 
 
 def _probe_vector_backend() -> dict:
-    return _dependency_ok(backend=vector_repository.backend_name)
+    backend_name = getattr(vector_repository, "backend_name", None)
+    if backend_name is None:
+        backend_name = getattr(vector_repository, "name", "unknown")
+    return _dependency_ok(backend=str(backend_name))
 
 
 def get_memory_health_snapshot() -> dict:
@@ -151,4 +188,16 @@ def get_memory_health_snapshot() -> dict:
         "memory_metrics": memory_repository.get_metrics_snapshot(),
         "index_jobs": index_jobs,
         "vector_backend": settings.vector_backend,
+    }
+
+
+def get_liveness_snapshot() -> dict:
+    return {"status": "ok"}
+
+
+def get_readiness_snapshot() -> dict:
+    snapshot = get_memory_health_snapshot()
+    return {
+        "overall_status": snapshot.get("overall_status", "degraded"),
+        "dependencies": snapshot.get("dependencies", {}),
     }

@@ -5,6 +5,13 @@ from datetime import datetime, timezone
 
 
 class JsonFormatter(logging.Formatter):
+    _fixed_fields = (
+        "event",
+        "trace_id",
+        "stage",
+        "degrade_reason",
+        "dependency",
+    )
     _reserved_fields = {
         "args",
         "asctime",
@@ -37,8 +44,14 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
         }
+        for field in self._fixed_fields:
+            payload[field] = record.__dict__.get(field)
         for key, value in record.__dict__.items():
-            if key in self._reserved_fields or key.startswith("_"):
+            if (
+                key in self._reserved_fields
+                or key in self._fixed_fields
+                or key.startswith("_")
+            ):
                 continue
             payload[key] = value
         if record.exc_info:
