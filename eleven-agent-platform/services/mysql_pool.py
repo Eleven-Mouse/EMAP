@@ -42,6 +42,10 @@ class PooledMySQLClient:
     def close(self) -> None:
         self._engine.dispose()
 
+    def ping(self) -> None:
+        with self.cursor() as cursor:
+            cursor.execute("SELECT 1")
+
     def pool_status(self) -> dict[str, int]:
         pool = self._engine.pool
         status: dict[str, int] = {}

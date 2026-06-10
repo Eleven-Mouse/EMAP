@@ -2,6 +2,11 @@ from dataclasses import dataclass
 import time
 from collections.abc import Callable
 
+from core.app_logging import get_logger
+
+
+logger = get_logger(__name__)
+
 
 @dataclass
 class MemoryRepository:
@@ -29,7 +34,7 @@ class MemoryRepository:
 
     def _alert(self, message: str) -> None:
         if self.monitor_enabled:
-            print(f"[memory-alert] {message}")
+            logger.warning(message, extra={"event": "memory_alert"})
 
     def _record_metric(self, op_name: str, duration_ms: float, failed: bool) -> None:
         bucket = self._metrics[op_name]

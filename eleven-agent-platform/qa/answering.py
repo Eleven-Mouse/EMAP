@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 from audit.audit_logger import AuditLogger
 from authz.access_control import AccessController
+from core.app_logging import get_logger
 from core.config import settings
 from guards.input_guard import InputGuard
 from guards.output_guard import OutputGuard, build_grounded_safe_answer
@@ -11,6 +12,8 @@ from pydantic import BaseModel, Field
 from qa.retrieval_stack import BM25Retriever, CrossEncoderReranker
 from repositories.metadata_repository import StoredChunk
 from schemas.common import SourceItem
+
+logger = get_logger(__name__)
 
 
 def _normalize_weights(weight_map: dict[str, float]) -> dict[str, float]:
@@ -405,7 +408,10 @@ class AnswerGenerator:
                 )
                 answer = self._parse_llm_answer(answer)
             except Exception as exc:  # noqa: BLE001
-                print(f"[llm-warning] {exc}")
+                logger.warning(
+                    "llm_generation_failed",
+                    extra={"event": "llm_generation_failed", "detail": str(exc)},
+                )
 
         if not answer:
             answer = (
@@ -524,7 +530,10 @@ class IntelligentQA:
         try:
             self._get_audit_logger().log(payload)
         except Exception as exc:  # noqa: BLE001
-            print(f"[audit-warning] {exc}")
+            logger.warning(
+                "audit_log_failed",
+                extra={"event": "audit_log_failed", "detail": str(exc)},
+            )
 
     def get_last_trace(self) -> dict | None:
         return self._last_trace

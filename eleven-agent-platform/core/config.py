@@ -148,6 +148,7 @@ class Settings:
             os.getenv("AUDIT_LOG_ENABLED", "true"),
             True,
         )
+        self.log_level = _to_str(os.getenv("LOG_LEVEL"), "INFO")
         self.audit_log_path = os.getenv(
             "AUDIT_LOG_PATH",
             f"{self.rag_store_dir}/audit/agent_audit.jsonl",

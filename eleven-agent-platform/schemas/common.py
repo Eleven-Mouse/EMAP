@@ -11,8 +11,17 @@ class SourceItem(BaseModel):
     scope_id: str | None = None
 
 
+class DependencyHealth(BaseModel):
+    status: str
+    detail: str | None = None
+    latency_ms: float | None = None
+    backend: str | None = None
+
+
 class HealthResponse(BaseModel):
     status: str
     app: str
     env: str
+    overall_status: str | None = None
+    dependencies: dict[str, DependencyHealth] | None = None
     memory: dict | None = None

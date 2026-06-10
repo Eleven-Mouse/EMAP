@@ -11,8 +11,10 @@ router = APIRouter(tags=["health"])
 def health() -> HealthResponse:
     snapshot = get_memory_health_snapshot()
     return HealthResponse(
-        status="ok",
+        status=str(snapshot.get("overall_status", "ok")),
         app=settings.app_name,
         env=settings.app_env,
+        overall_status=snapshot.get("overall_status"),
+        dependencies=snapshot.get("dependencies"),
         memory=snapshot,
     )

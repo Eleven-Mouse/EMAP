@@ -1,8 +1,11 @@
+from time import perf_counter
+
 try:
     import redis
 except ImportError:  # pragma: no cover - exercised only in constrained test envs
     redis = None
 
+from core.app_logging import get_logger
 from core.config import settings
 from repositories.document_repository import DocumentRepository
 from repositories.index_job_repository import IndexJobRepository
@@ -11,6 +14,8 @@ from repositories.metadata_repository import MetadataRepository
 from repositories.memory_repository import MemoryRepository
 from repositories.vector_repository import VectorRepository
 from services.mysql_pool import PooledMySQLClient
+
+logger = get_logger(__name__)
 
 document_repository = DocumentRepository()
 vector_repository = VectorRepository(
@@ -67,8 +72,53 @@ memory_repository = MemoryRepository(
 )
 
 
+def _dependency_ok(latency_ms: float | None = None, **extra) -> dict:
+    payload = {"status": "ok"}
+    if latency_ms is not None:
+        payload["latency_ms"] = round(latency_ms, 2)
+    payload.update(extra)
+    return payload
+
+
+def _dependency_error(name: str, detail: str) -> dict:
+    logger.warning(
+        "dependency_probe_failed",
+        extra={"event": "dependency_probe_failed", "dependency": name, "detail": detail},
+    )
+    return {"status": "degraded", "detail": detail}
+
+
+def _probe_mysql() -> dict:
+    start = perf_counter()
+    try:
+        mysql_client.ping()
+    except Exception as exc:  # noqa: BLE001
+        return _dependency_error("mysql", str(exc))
+    return _dependency_ok(latency_ms=(perf_counter() - start) * 1000)
+
+
+def _probe_redis() -> dict:
+    if redis_client is None:
+        return {"status": "degraded", "detail": "redis client unavailable"}
+    start = perf_counter()
+    try:
+        redis_client.ping()
+    except Exception as exc:  # noqa: BLE001
+        return _dependency_error("redis", str(exc))
+    return _dependency_ok(latency_ms=(perf_counter() - start) * 1000)
+
+
+def _probe_vector_backend() -> dict:
+    return _dependency_ok(backend=vector_repository.backend_name)
+
+
 def get_memory_health_snapshot() -> dict:
     mysql_status = mysql_client.pool_status()
+    dependencies = {
+        "mysql": _probe_mysql(),
+        "redis": _probe_redis(),
+        "vector_store": _probe_vector_backend(),
+    }
 
     redis_status: dict[str, int] = {}
     pool = getattr(redis_client, "connection_pool", None)
@@ -80,10 +130,25 @@ def get_memory_health_snapshot() -> dict:
         if isinstance(available, list):
             redis_status["available"] = len(available)
 
+    try:
+        index_jobs = index_job_repository.summarize_statuses()
+    except Exception as exc:  # noqa: BLE001
+        dependencies["index_jobs"] = _dependency_error("index_jobs", str(exc))
+        index_jobs = {}
+    else:
+        dependencies["index_jobs"] = _dependency_ok()
+
+    overall_status = (
+        "ok"
+        if all(item.get("status") == "ok" for item in dependencies.values())
+        else "degraded"
+    )
     return {
+        "overall_status": overall_status,
+        "dependencies": dependencies,
         "mysql_pool": mysql_status,
         "redis_pool": redis_status,
         "memory_metrics": memory_repository.get_metrics_snapshot(),
-        "index_jobs": index_job_repository.summarize_statuses(),
+        "index_jobs": index_jobs,
         "vector_backend": settings.vector_backend,
     }
